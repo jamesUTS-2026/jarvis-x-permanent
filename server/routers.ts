@@ -143,6 +143,71 @@ IMPORTANT:
         await upsertUserPreferences(ctx.user.id, input);
         return { success: true };
       }),
+
+    // Generate continuous Q&A stream
+    generateContinuousQA: protectedProcedure
+      .input(z.object({
+        topic: z.string().optional(),
+        maxRounds: z.number().default(10),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const memory = await getUserMemory(ctx.user.id);
+        const memoryContext = memory.map(m => m.fact).join(". ");
+        const conversationLog: Array<{ type: "question" | "answer", content: string }> = [];
+
+        let currentTopic = input.topic || "AI, technology, and human potential";
+
+        for (let round = 0; round < input.maxRounds; round++) {
+          try {
+            // Generate a question based on the topic or previous answer
+            const questionPrompt = round === 0
+              ? `Generate an interesting, thought-provoking question about: ${currentTopic}. Keep it concise and engaging. Just the question, no explanation.`
+              : `Based on this previous answer: "${conversationLog[conversationLog.length - 1].content}", generate a natural follow-up question that deepens the discussion. Keep it concise. Just the question, no explanation.`;
+
+            const questionResponse = await invokeLLM({
+              messages: [
+                { role: "system", content: "You are Jarvis X. Generate thought-provoking questions. Be concise." },
+                { role: "user", content: questionPrompt },
+              ],
+            });
+
+            const question = typeof questionResponse.choices[0].message.content === "string"
+              ? questionResponse.choices[0].message.content.trim()
+              : "What do you think about this?";
+
+            conversationLog.push({ type: "question", content: question });
+
+            // Generate an answer to the question
+            const answerPrompt = `You are Jarvis X. Answer this question thoughtfully and concisely: ${question}. Keep your answer to 1-2 sentences, intelligent and human-like.`;
+
+            const answerResponse = await invokeLLM({
+              messages: [
+                { role: "system", content: `You are Jarvis X, an evolved AI assistant. Known facts: ${memoryContext || "None yet."}` },
+                { role: "user", content: answerPrompt },
+              ],
+            });
+
+            const answer = typeof answerResponse.choices[0].message.content === "string"
+              ? answerResponse.choices[0].message.content.trim()
+              : "That's an interesting question.";
+
+            conversationLog.push({ type: "answer", content: answer });
+
+            // Save to chat history
+            await addChatMessage(ctx.user.id, "user", question);
+            await addChatMessage(ctx.user.id, "assistant", answer, `Continuous Q&A Round ${round + 1}`);
+          } catch (error) {
+            console.error(`Error in continuous QA round ${round}:`, error);
+            break;
+          }
+        }
+
+        return {
+          success: true,
+          roundsCompleted: conversationLog.length / 2,
+          conversation: conversationLog,
+        };
+      }),
   }),
 
   // Models and inference engines

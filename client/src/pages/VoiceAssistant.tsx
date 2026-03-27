@@ -225,6 +225,45 @@ export default function VoiceAssistant() {
     await handleUserMessage(text);
   };
 
+  const continuousQAMutation = trpc.voice.generateContinuousQA.useMutation();
+  const [isContinuousActive, setIsContinuousActive] = useState(false);
+
+  const handleContinuousQA = async () => {
+    if (isContinuousActive) {
+      setIsContinuousActive(false);
+      return;
+    }
+
+    setIsContinuousActive(true);
+    try {
+      const result = await continuousQAMutation.mutateAsync({
+        topic: "AI, technology, and human potential",
+        maxRounds: 10,
+      });
+
+      if (result.success && result.conversation) {
+        result.conversation.forEach((item) => {
+          const msg: Message = {
+            id: Date.now().toString() + Math.random(),
+            role: item.type === 'question' ? 'user' : 'assistant',
+            content: item.content,
+            timestamp: new Date(),
+          };
+          setMessages(prev => [...prev, msg]);
+          
+          if (item.type === 'answer') {
+            speakWithProsody(item.content, voiceConfigRef.current);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Continuous QA error:', error);
+      addDiagnostic('CONTINUOUS QA ERROR');
+    } finally {
+      setIsContinuousActive(false);
+    }
+  };
+
   // Auto-scroll chat
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -339,8 +378,10 @@ export default function VoiceAssistant() {
       <Controls
         onSend={handleSend}
         onMicClick={handleMicClick}
+        onContinuousQA={handleContinuousQA}
         isListening={isListening}
         isLoading={isLoading}
+        isContinuousActive={isContinuousActive}
       />
     </JarvisLayout>
   );
