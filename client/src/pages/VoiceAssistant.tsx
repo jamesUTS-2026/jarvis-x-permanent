@@ -3,6 +3,7 @@ import { useAuth } from '@/_core/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
 import { JarvisLayout, JarvisHeader, Panel, Controls } from '@/components/JarvisLayout';
 import { Loader2 } from 'lucide-react';
+import { speakWithProsody, stopSpeech, isSpeaking, initializeVoiceSynthesis, type VoiceConfig } from '@/lib/advancedVoice';
 
 interface Message {
   id: string;
@@ -26,18 +27,26 @@ export default function VoiceAssistant() {
   const [memory, setMemory] = useState<MemoryItem[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isSpeakingState, setIsSpeakingState] = useState(false);
   const [diagnostics, setDiagnostics] = useState<string[]>([
     '> BOOTING KERNEL...',
     '> LOADING MEMORY MODULE...',
     '> ATTACHING REASONING LOOP...',
+    '> INITIALIZING VOICE ENGINE...',
     '> READY.',
   ]);
   const [dataStream, setDataStream] = useState<string[]>([]);
 
   const recognitionRef = useRef<any>(null);
-  const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const voiceConfigRef = useRef<VoiceConfig>({
+    pitch: 0.9,
+    rate: 1.0,
+    volume: 1,
+    voiceProfile: 'authoritative',
+    enableEmphasis: true,
+    enablePauses: true,
+    enableStreaming: true,
+  });
 
   // tRPC mutations and queries
   const processMessageMutation = trpc.voice.processMessage.useMutation();
@@ -45,8 +54,11 @@ export default function VoiceAssistant() {
   const getChatHistoryQuery = trpc.voice.getChatHistory.useQuery(undefined, { enabled: isAuthenticated });
   const getPreferencesQuery = trpc.voice.getPreferences.useQuery(undefined, { enabled: isAuthenticated });
 
-  // Initialize Web Speech API
+  // Initialize Web Speech API and Voice Synthesis
   useEffect(() => {
+    // Initialize advanced voice synthesis
+    initializeVoiceSynthesis();
+
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       recognitionRef.current = new SpeechRecognition();
@@ -71,20 +83,6 @@ export default function VoiceAssistant() {
         addDiagnostic(`ERROR: ${event.error.toUpperCase()}`);
       };
     }
-
-    // Initialize voices
-    const loadVoices = () => {
-      const voices = window.speechSynthesis.getVoices();
-      const preferred = voices.find(v => 
-        v.name.includes('Google US English Male') || 
-        v.name.includes('Microsoft David') ||
-        v.lang.includes('en-US')
-      );
-      voiceRef.current = preferred || voices[0];
-    };
-
-    window.speechSynthesis.onvoiceschanged = loadVoices;
-    loadVoices();
   }, []);
 
   // Load initial data
@@ -121,34 +119,31 @@ export default function VoiceAssistant() {
     setDiagnostics(prev => [`> ${msg}`, ...prev.slice(0, 9)]);
   };
 
-  const speak = (text: string) => {
-    if (!voiceRef.current) return;
+  const speak = async (text: string) => {
+    setIsSpeakingState(true);
+    addDiagnostic('VOICE SYNTHESIS INITIATED...');
 
-    setIsSpeaking(true);
-    const cleanText = text.replace(/[*_#`]/g, '');
-    const chunks = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
-
-    let currentChunk = 0;
-    const speakNext = () => {
-      if (currentChunk >= chunks.length) {
-        setIsSpeaking(false);
-        return;
+    try {
+      // Update voice config from preferences
+      const prefs = getPreferencesQuery.data;
+      if (prefs) {
+        voiceConfigRef.current.pitch = (prefs.voicePitch || 90) / 100;
+        voiceConfigRef.current.rate = (prefs.voiceRate || 100) / 100;
       }
 
-      const utterance = new SpeechSynthesisUtterance(chunks[currentChunk]);
-      utterance.voice = voiceRef.current;
-      utterance.pitch = (getPreferencesQuery.data?.voicePitch || 90) / 100;
-      utterance.rate = (getPreferencesQuery.data?.voiceRate || 100) / 100;
+      // Use advanced voice synthesis with prosody
+      await speakWithProsody(text, voiceConfigRef.current, (progress) => {
+        if (progress % 25 === 0) {
+          addDiagnostic(`SYNTHESIS: ${progress}%`);
+        }
+      });
 
-      utterance.onend = () => {
-        currentChunk++;
-        setTimeout(speakNext, 200);
-      };
-
-      window.speechSynthesis.speak(utterance);
-    };
-
-    setTimeout(speakNext, 400);
+      addDiagnostic('VOICE SYNTHESIS COMPLETE.');
+    } catch (error) {
+      addDiagnostic(`VOICE ERROR: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsSpeakingState(false);
+    }
   };
 
   const handleUserMessage = async (text: string) => {
@@ -164,7 +159,7 @@ export default function VoiceAssistant() {
     setMessages(prev => [...prev, userMsg]);
 
     setIsLoading(true);
-    addDiagnostic('PROCESSING...');
+    addDiagnostic('NEURAL PROCESSING INITIATED...');
 
     try {
       const result = await processMessageMutation.mutateAsync({
@@ -183,15 +178,15 @@ export default function VoiceAssistant() {
 
       // Update memory if learned
       if (result.learned) {
-        addDiagnostic(`LEARNED: ${result.learned}`);
+        addDiagnostic(`MEMORY UPDATED: ${result.learned}`);
         getMemoryQuery.refetch();
       }
 
-      // Speak response
-      speak(result.response);
-      addDiagnostic('RESPONSE COMPLETE.');
+      addDiagnostic('PREPARING VOICE OUTPUT...');
+      // Speak response with advanced prosody
+      await speak(result.response);
     } catch (error) {
-      addDiagnostic('ERROR: API_FAILURE');
+      addDiagnostic('ERROR: NEURAL_LINK_FAILURE');
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -205,15 +200,18 @@ export default function VoiceAssistant() {
   };
 
   const handleMicClick = () => {
-    if (isListening) {
+    if (isSpeaking()) {
+      stopSpeech();
+      setIsSpeakingState(false);
+    } else if (isListening) {
       recognitionRef.current?.stop();
     } else {
       recognitionRef.current?.start();
     }
   };
 
-  const handleSend = (text: string) => {
-    handleUserMessage(text);
+  const handleSend = async (text: string) => {
+    await handleUserMessage(text);
   };
 
   // Auto-scroll chat
@@ -297,6 +295,11 @@ export default function VoiceAssistant() {
             {isLoading && (
               <div className="text-xs text-[#00f3ff] animate-pulse">
                 Thinking...
+              </div>
+            )}
+            {isSpeakingState && (
+              <div className="text-xs text-[#ff00ff] animate-pulse">
+                Speaking...
               </div>
             )}
           </div>
