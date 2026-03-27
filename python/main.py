@@ -1,11 +1,11 @@
 """
 JARVIS X FastAPI Microservice
-Handles inference engine routing, local model support, and cloud fallback
+Handles inference engine routing, local model support, cloud fallback, and TTS
 """
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Optional, List
 import os
@@ -21,7 +21,7 @@ app = FastAPI(title="JARVIS X Inference Engine", version="1.0.0")
 # Enable CORS for Node.js backend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=["http://localhost:3000", "http://localhost:5173", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,7 +34,10 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Initialize OpenAI client
-openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+if OPENAI_API_KEY:
+    openai_client = OpenAI(api_key=OPENAI_API_KEY)
+else:
+    openai_client = None
 
 # Models
 class InferenceRequest(BaseModel):
@@ -62,17 +65,9 @@ class ModelInfo(BaseModel):
     available: bool
 
 class TTSRequest(BaseModel):
-    """Request for text-to-speech synthesis"""
+    """Text-to-speech request"""
     text: str
-    voice: str = "onyx"  # Deep male voice
-    speed: float = 0.95  # Slightly slower for authority
-    model: str = "tts-1-hd"  # HD quality
-
-class TTSResponse(BaseModel):
-    """Response from text-to-speech"""
-    audio_url: Optional[str] = None
-    audio_data: Optional[bytes] = None
-    duration_ms: float = 0.0
+    voice: str = "onyx"  # onyx = deep male, echo = lighter male
 
 # Health check
 @app.get("/health")
@@ -83,6 +78,7 @@ async def health_check():
         "status": "ok",
         "ollama_available": ollama_available,
         "openrouter_configured": bool(OPENROUTER_API_KEY),
+        "openai_configured": bool(OPENAI_API_KEY),
     }
 
 # Check if Ollama is available
@@ -231,41 +227,22 @@ async def run_openrouter_inference(request: InferenceRequest) -> dict:
         
         return {"content": content, "tokens": tokens}
 
-# Text-to-speech endpoint
+# Text-to-Speech endpoint
 @app.post("/tts")
-async def text_to_speech(request: TTSRequest):
-    """
-    Generate speech from text using OpenAI TTS
-    Returns audio file with onyx voice (deep male) at specified speed
-    """
+async def text_to_speech(req: TTSRequest):
+    """Convert text to speech using OpenAI TTS - guaranteed deep male voice"""
     if not openai_client:
         raise HTTPException(status_code=500, detail="OpenAI API key not configured")
     
     try:
-        import time
-        start_time = time.time()
-        
-        # Call OpenAI TTS API
         response = openai_client.audio.speech.create(
-            model=request.model,  # tts-1-hd for HD quality
-            voice=request.voice,  # onyx = deep male voice
-            input=request.text,
-            speed=request.speed,  # 0.95 = slightly slower for authority
+            model="tts-1",
+            voice=req.voice,  # onyx = deep male, echo = lighter male
+            input=req.text
         )
-        
-        duration_ms = (time.time() - start_time) * 1000
-        
-        # Return audio as bytes
-        audio_data = response.content
-        
-        return StreamingResponse(
-            iter([audio_data]),
-            media_type="audio/mpeg",
-            headers={"Content-Disposition": "attachment; filename=jarvis-speech.mp3"}
-        )
+        return Response(content=response.content, media_type="audio/mpeg")
     except Exception as e:
-        print(f"[TTS] Error: {e}")
-        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"TTS error: {str(e)}")
 
 # Trace recording endpoint
 @app.post("/traces")

@@ -1,111 +1,177 @@
 /**
- * OpenAI TTS Integration via FastAPI Backend
- * Calls the Python backend /tts endpoint for voice synthesis with onyx voice
+ * OpenAI Text-to-Speech Engine
+ * Replaces Web Speech API with server-side TTS for guaranteed consistent male voice
+ * Voice: "onyx" = deep male (Iron Man JARVIS style)
  */
 
-const TTS_ENDPOINT = 'http://localhost:8000/tts';
-
-export interface TTSOptions {
-  text: string;
-  voice?: string; // Default: 'onyx' (deep male voice)
-  speed?: number; // Default: 0.95 (slightly slower for authority)
-  model?: string; // Default: 'tts-1-hd' (HD quality)
+export interface TTSConfig {
+  voice: 'onyx' | 'echo'; // onyx = deep male, echo = lighter male
+  speed: number; // 0.25 - 4.0
 }
 
+let currentAudio: HTMLAudioElement | null = null;
+let isPlaying = false;
+
 /**
- * Generate speech from text using OpenAI TTS via FastAPI backend
- * Returns audio blob that can be played directly
+ * Convert text to speech using OpenAI TTS backend
+ * @param text - Text to speak
+ * @param config - TTS configuration
+ * @param onProgress - Progress callback (0-100)
  */
-export async function generateSpeech(options: TTSOptions): Promise<Blob> {
-  const {
-    text,
-    voice = 'onyx',
-    speed = 0.95,
-    model = 'tts-1-hd',
-  } = options;
+export async function speak(
+  text: string,
+  config: TTSConfig = { voice: 'onyx', speed: 1.0 },
+  onProgress?: (progress: number) => void
+): Promise<void> {
+  if (!text || text.trim().length === 0) {
+    return;
+  }
+
+  // Stop any existing speech
+  stopSpeech();
 
   try {
-    const response = await fetch(TTS_ENDPOINT, {
+    onProgress?.(10); // Starting
+
+    // Call backend TTS endpoint
+    const response = await fetch('http://localhost:8000/tts', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        text,
-        voice,
-        speed,
-        model,
+        text: text.trim(),
+        voice: config.voice,
       }),
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || `TTS generation failed: ${response.statusText}`);
+      throw new Error(`TTS error: ${response.statusText}`);
     }
 
-    // Get audio blob from response
+    onProgress?.(50); // Downloaded
+
     const audioBlob = await response.blob();
-    return audioBlob;
+    const audioUrl = URL.createObjectURL(audioBlob);
+
+    // Create and play audio
+    currentAudio = new Audio(audioUrl);
+    currentAudio.playbackRate = config.speed;
+
+    // Track playback progress
+    currentAudio.addEventListener('timeupdate', () => {
+      if (currentAudio && currentAudio.duration) {
+        const progress = 50 + (currentAudio.currentTime / currentAudio.duration) * 50;
+        onProgress?.(Math.min(100, progress));
+      }
+    });
+
+    currentAudio.addEventListener('ended', () => {
+      isPlaying = false;
+      onProgress?.(100);
+      URL.revokeObjectURL(audioUrl);
+    });
+
+    currentAudio.addEventListener('error', (err) => {
+      console.error('[TTS] Playback error:', err);
+      isPlaying = false;
+      URL.revokeObjectURL(audioUrl);
+    });
+
+    isPlaying = true;
+    await currentAudio.play();
   } catch (error) {
-    console.error('[TTS] Error generating speech:', error);
+    console.error('[TTS] Error:', error);
+    isPlaying = false;
     throw error;
   }
 }
 
 /**
- * Play audio blob using Web Audio API
+ * Stop current speech
  */
-export async function playAudio(audioBlob: Blob): Promise<void> {
-  return new Promise((resolve, reject) => {
-    try {
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
+export function stopSpeech(): void {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    isPlaying = false;
+  }
+}
 
-      audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        resolve();
-      };
+/**
+ * Check if speech is currently playing
+ */
+export function isSpeaking(): boolean {
+  return isPlaying && currentAudio !== null && !currentAudio.paused;
+}
 
-      audio.onerror = () => {
-        URL.revokeObjectURL(audioUrl);
-        reject(new Error('Audio playback failed'));
-      };
+/**
+ * Pause speech
+ */
+export function pauseSpeech(): void {
+  if (currentAudio && !currentAudio.paused) {
+    currentAudio.pause();
+    isPlaying = false;
+  }
+}
 
-      audio.play().catch(reject);
-    } catch (error) {
-      reject(error);
+/**
+ * Resume speech
+ */
+export function resumeSpeech(): void {
+  if (currentAudio && currentAudio.paused && isPlaying) {
+    currentAudio.play();
+  }
+}
+
+/**
+ * Break text into natural chunks for better speech flow
+ */
+export function chunkText(text: string, maxLength: number = 500): string[] {
+  const chunks: string[] = [];
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+
+  let currentChunk = '';
+
+  for (const sentence of sentences) {
+    if ((currentChunk + sentence).length > maxLength && currentChunk.length > 0) {
+      chunks.push(currentChunk.trim());
+      currentChunk = sentence;
+    } else {
+      currentChunk += sentence;
     }
-  });
-}
-
-/**
- * Generate and play speech in one call
- */
-export async function speakText(options: TTSOptions): Promise<void> {
-  try {
-    const audioBlob = await generateSpeech(options);
-    await playAudio(audioBlob);
-  } catch (error) {
-    console.error('[TTS] Error during speech synthesis:', error);
-    throw error;
   }
+
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk.trim());
+  }
+
+  return chunks;
 }
 
 /**
- * Stop current audio playback
+ * Speak multiple chunks sequentially
  */
-export function stopAudio(): void {
-  const audioElements = document.querySelectorAll('audio');
-  audioElements.forEach(audio => {
-    audio.pause();
-    audio.currentTime = 0;
-  });
-}
+export async function speakChunked(
+  text: string,
+  config: TTSConfig = { voice: 'onyx', speed: 1.0 },
+  onProgress?: (progress: number) => void
+): Promise<void> {
+  const chunks = chunkText(text);
 
-/**
- * Check if audio is currently playing
- */
-export function isAudioPlaying(): boolean {
-  const audioElements = document.querySelectorAll('audio');
-  return Array.from(audioElements).some(audio => !audio.paused);
+  for (let i = 0; i < chunks.length; i++) {
+    const chunkProgress = (i / chunks.length) * 100;
+    onProgress?.(chunkProgress);
+
+    await speak(chunks[i], config, (p) => {
+      onProgress?.(chunkProgress + (p / chunks.length));
+    });
+
+    // Add natural pause between chunks
+    if (i < chunks.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+
+  onProgress?.(100);
 }
