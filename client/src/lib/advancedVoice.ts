@@ -60,10 +60,12 @@ export function parseTextForSpeech(text: string): SpeechSegment[] {
     }
 
     if (currentSegment) {
+      // For JARVIS: longer pause after sentences for measured delivery
+      const pauseAfter = currentSegment.endsWith('?') ? 400 : 350;
       segments.push({
         text: currentSegment.trim(),
         emphasis: hasEmphasis,
-        pauseAfter: 300, // Pause after sentence
+        pauseAfter, // Natural pause after sentence
       });
     }
   }
@@ -92,8 +94,8 @@ export function getVoiceProfile(profile: 'authoritative' | 'friendly' | 'technic
       volume: 1,
     },
     jarvis: {
-      pitch: 0.75, // Deep masculine voice
-      rate: 0.88,  // Slower, more refined delivery
+      pitch: 0.68, // Very deep, low masculine voice matching Iron Man JARVIS
+      rate: 0.82,  // Slow, deliberate, measured delivery
       volume: 1,
     },
   };
@@ -123,15 +125,16 @@ export function findBestVoice(profile?: string): SpeechSynthesisVoice | null {
     return maleIndicators.some(indicator => name.includes(indicator)) || lang.includes('male');
   });
   
-  // For JARVIS profile, prioritize British and deep male voices
+  // For JARVIS profile, prioritize British RP (Received Pronunciation) male voices
   if (profile === 'jarvis' && maleVoices.length > 0) {
     const jarvisPriorities = [
+      // British voices for authentic JARVIS character
       (v: SpeechSynthesisVoice) => v.name.includes('Google UK English Male'),
+      (v: SpeechSynthesisVoice) => v.name.includes('en-GB') && v.name.includes('Male'),
+      (v: SpeechSynthesisVoice) => v.lang === 'en-GB' && !v.name.toLowerCase().includes('female'),
       (v: SpeechSynthesisVoice) => v.name.includes('Microsoft David'),
       (v: SpeechSynthesisVoice) => v.name.includes('David') && v.lang.includes('en'),
-      (v: SpeechSynthesisVoice) => v.lang === 'en-GB' && !v.name.toLowerCase().includes('female'),
       (v: SpeechSynthesisVoice) => v.lang === 'en-US' && v.name.includes('Male'),
-      (v: SpeechSynthesisVoice) => v.lang === 'en-IN' && v.name.includes('Male'),
       (v: SpeechSynthesisVoice) => v.lang.startsWith('en-') && !v.name.toLowerCase().includes('female'),
     ];
     
@@ -196,9 +199,9 @@ export async function speakWithProsody(
       utterance.rate = config.rate;
       utterance.volume = config.volume;
 
-      // Adjust pitch for emphasis (less dramatic for JARVIS)
+      // Adjust pitch for emphasis (very subtle for JARVIS to maintain composure)
       if (segment.emphasis && config.enableEmphasis) {
-        const emphasisBoost = config.voiceProfile === 'jarvis' ? 0.08 : 0.15;
+        const emphasisBoost = config.voiceProfile === 'jarvis' ? 0.05 : 0.15;
         utterance.pitch = Math.min(2, config.pitch + emphasisBoost);
       }
 
