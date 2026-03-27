@@ -140,19 +140,15 @@ export const Panel: React.FC<PanelProps> = ({ title, children, className }) => (
 interface ControlsProps {
   onSend: (message: string) => void;
   onMicClick: () => void;
-  onContinuousQA?: () => void;
   isListening: boolean;
   isLoading: boolean;
-  isContinuousActive?: boolean;
 }
 
 export const Controls: React.FC<ControlsProps> = ({
   onSend,
   onMicClick,
-  onContinuousQA,
   isListening,
   isLoading,
-  isContinuousActive,
 }) => {
   const [input, setInput] = useState('');
 
@@ -201,21 +197,6 @@ export const Controls: React.FC<ControlsProps> = ({
       >
         Send
       </button>
-
-      {onContinuousQA && (
-        <button
-          onClick={onContinuousQA}
-          disabled={isLoading}
-          className={cn(
-            "px-6 py-2 border font-mono text-xs uppercase tracking-widest transition-all",
-            isContinuousActive
-              ? "border-[#ff00ff] text-[#ff00ff] bg-[#ff00ff] text-[#050505] shadow-[0_0_15px_#ff00ff] animate-pulse"
-              : "border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff] hover:text-[#050505] hover:shadow-[0_0_15px_#ff00ff] disabled:opacity-50 disabled:cursor-not-allowed"
-          )}
-        >
-          {isContinuousActive ? '⏸ Stop' : '▶ Auto-Talk'}
-        </button>
-      )}
     </div>
   );
 };
