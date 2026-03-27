@@ -58,8 +58,14 @@ export default function VoiceAssistant() {
 
   // Initialize Web Speech API and Voice Synthesis
   useEffect(() => {
-    // Initialize advanced voice synthesis
-    initializeVoiceSynthesis();
+    // Initialize advanced voice synthesis with proper event listener
+    initializeVoiceSynthesis().then((voices) => {
+      console.log('[JARVIS] Voice system initialized with', voices.length, 'voices');
+      addDiagnostic('VOICE ENGINE READY');
+    }).catch((err) => {
+      console.error('[JARVIS] Voice initialization failed:', err);
+      addDiagnostic('VOICE ENGINE ERROR');
+    });
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {

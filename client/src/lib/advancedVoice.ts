@@ -120,8 +120,8 @@ export function findBestVoice(profile?: string): SpeechSynthesisVoice | null {
       return false;
     }
     
-    // Include only male voices
-    const maleIndicators = ['male', 'man', 'boy', 'david', 'mark', 'george', 'google uk english male', 'microsoft david'];
+    // Include only male voices (David, Alex, James, Guy, Mark, etc.)
+    const maleIndicators = ['male', 'man', 'boy', 'david', 'alex', 'james', 'guy', 'mark', 'george', 'google uk english male', 'microsoft david'];
     return maleIndicators.some(indicator => name.includes(indicator)) || lang.includes('male');
   });
   
@@ -306,13 +306,36 @@ export function applyVoiceEffects(
 }
 
 /**
- * Initialize voice synthesis system
+ * Initialize voice synthesis system with proper event listener
+ * MUST be called on app startup to ensure voices load properly
  */
-export function initializeVoiceSynthesis(): void {
-  // Ensure voices are loaded
-  if (window.speechSynthesis.getVoices().length === 0) {
-    window.speechSynthesis.onvoiceschanged = () => {
-      // Voices loaded
+export function initializeVoiceSynthesis(): Promise<SpeechSynthesisVoice[]> {
+  return new Promise((resolve) => {
+    const voices = window.speechSynthesis.getVoices();
+    
+    // If voices already loaded, resolve immediately
+    if (voices.length > 0) {
+      console.log('[Voice] Voices already loaded:', voices.length);
+      resolve(voices);
+      return;
+    }
+    
+    // Otherwise wait for onvoiceschanged event
+    const handleVoicesChanged = () => {
+      const loadedVoices = window.speechSynthesis.getVoices();
+      console.log('[Voice] Voices loaded via onvoiceschanged:', loadedVoices.length);
+      window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+      resolve(loadedVoices);
     };
-  }
+    
+    window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
+    
+    // Timeout after 5 seconds
+    setTimeout(() => {
+      window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+      const fallbackVoices = window.speechSynthesis.getVoices();
+      console.warn('[Voice] Timeout waiting for voices. Using available:', fallbackVoices.length);
+      resolve(fallbackVoices);
+    }, 5000);
+  });
 }

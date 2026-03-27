@@ -135,3 +135,64 @@
 - [ ] Add offline mode support
 - [ ] Create analytics dashboard
 - [ ] Build admin panel for model management
+
+
+## Phase 1: Open JARVIS Core Implementation
+
+### Voice Fix (Critical)
+- [x] Fix voice selection with onvoiceschanged event listener
+- [x] Implement male voice filtering (David, Alex, James, Guy)
+- [x] Test voice on multiple browsers (Chrome, Firefox, Safari, Edge)
+
+### Python FastAPI Microservice Setup
+- [ ] Create Python project structure in /python directory
+- [ ] Set up FastAPI server on port 8000
+- [ ] Create inference engine abstraction layer
+- [ ] Implement cloud API routing (OpenRouter, OpenAI, Anthropic, Google)
+- [ ] Add Ollama local model detection
+- [ ] Create FastAPI endpoints for model inference
+- [ ] Set up inter-process communication between Node.js and Python
+
+### Local Model Support with Cloud Fallback
+- [ ] Implement model registry with metadata (name, type, cost, latency)
+- [ ] Add cloud fallback logic when local models unavailable
+- [ ] Create model selection routing logic
+- [ ] Implement health checks for local models
+- [ ] Test local + cloud routing scenarios
+
+### Learning Loop & Trace System
+- [ ] Implement trace collection on every API call
+- [ ] Add trace storage to database with timestamps
+- [ ] Create trace analysis engine
+- [ ] Build trace visualization in UI
+- [ ] Implement learning insights generation
+
+### Cost Tracking System
+- [ ] Add cost calculation per API call (tokens × price)
+- [ ] Implement cost aggregation by model and user
+- [ ] Create cost tracking database queries
+- [ ] Build cost dashboard UI
+- [ ] Add cost alerts and warnings
+
+### APK Support (Capacitor)
+- [ ] Install Capacitor CLI and Android plugin
+- [ ] Initialize Capacitor project
+- [ ] Configure capacitor.config.ts
+- [ ] Generate Android project
+- [ ] Build APK in debug mode
+- [ ] Add APK download link to website
+- [ ] Test APK on Android device
+
+### Testing & Quality Assurance
+- [ ] Run all existing unit tests (12 tests)
+- [ ] Test voice fix on multiple browsers
+- [ ] Test local model detection and routing
+- [ ] Test cost tracking calculations
+- [ ] Test APK installation and functionality
+- [ ] Create comprehensive test suite for Phase 1
+
+### Deployment
+- [ ] Create checkpoint for Phase 1
+- [ ] Deploy to Manus
+- [ ] Verify all systems working in production
+- [ ] Monitor for issues
