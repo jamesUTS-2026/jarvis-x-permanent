@@ -2,7 +2,7 @@
 """
 JARVIS X - Real-time Voice AI Agent
 Built with LiveKit for real-time voice communication
-Supports tools, memory, and advanced features
+Uses Groq for free LLM inference
 """
 
 import os
@@ -13,10 +13,10 @@ from datetime import datetime
 from typing import Optional
 from dotenv import load_dotenv
 
-from livekit import agents, llm
-from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, llm as agents_llm
+from livekit import agents
+from livekit.agents import AutoSubscribe, JobContext, WorkerOptions
 from livekit.agents.voice_assistant import VoiceAssistant
-from livekit.plugins import silero
+from livekit.plugins import silero, openai
 from groq import Groq
 import aiohttp
 import requests
@@ -245,18 +245,14 @@ async def entrypoint(ctx: JobContext):
     # Initialize agent
     agent = JarvisAgent()
 
-    # Configure voice assistant
+    # Configure voice assistant with LiveKit
+    # Using OpenAI TTS for voice output (high quality)
     await agent.astart(
         ctx.room,
         ctx.participant,
         # Speech-to-Text using Silero (free, runs locally)
         stt=silero.STT.create(),
-        # LLM using Groq (free, fast)
-        llm=agents_llm.LLM.create(
-            model="mixtral-8x7b-32768",
-            api_key=GROQ_API_KEY,
-        ),
-        # Text-to-Speech using OpenAI
+        # Text-to-Speech using OpenAI (high quality voice)
         tts=openai.TTS.create(
             model="tts-1-hd",
             voice="onyx",
