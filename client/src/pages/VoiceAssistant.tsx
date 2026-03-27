@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
 import { JarvisLayout, JarvisHeader, Panel, Controls } from '@/components/JarvisLayout';
@@ -53,6 +53,8 @@ export default function VoiceAssistant() {
   const getMemoryQuery = trpc.voice.getMemory.useQuery(undefined, { enabled: isAuthenticated });
   const getChatHistoryQuery = trpc.voice.getChatHistory.useQuery(undefined, { enabled: isAuthenticated });
   const getPreferencesQuery = trpc.voice.getPreferences.useQuery(undefined, { enabled: isAuthenticated });
+  const getModelsQuery = trpc.models.listAvailable.useQuery(undefined, { enabled: isAuthenticated });
+  const getTracesQuery = trpc.performance.getTraces.useQuery({ limit: 50 }, { enabled: isAuthenticated });
 
   // Initialize Web Speech API and Voice Synthesis
   useEffect(() => {

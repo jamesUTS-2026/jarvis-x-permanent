@@ -66,7 +66,7 @@ export const JarvisHeader: React.FC<HeaderProps> = ({
         <h1 className="text-2xl font-bold tracking-widest text-[#00f3ff] glitch" style={{ textShadow: '0 0 10px #00f3ff' }}>
           JARVIS X
         </h1>
-        <p className="text-xs tracking-widest text-[#ff00ff]">EVOLVED NEURAL CORE v2.0</p>
+        <p className="text-xs tracking-widest text-[#ff00ff]">EVOLVED NEURAL CORE v3.0</p>
       </div>
 
       <div className="grid grid-cols-4 gap-4 text-xs">
@@ -202,3 +202,64 @@ export const Controls: React.FC<ControlsProps> = ({
 };
 
 export default JarvisLayout;
+
+
+// Model Selector Component
+interface ModelSelectorProps {
+  models: Array<{ id: number; name: string; engine: 'local' | 'cloud'; costPer1kTokens: number; avgLatencyMs: number }>;
+  selectedModelId?: number;
+  onSelectModel: (modelId: number) => void;
+  isLoading?: boolean;
+}
+
+export const ModelSelector: React.FC<ModelSelectorProps> = ({ models, selectedModelId, onSelectModel, isLoading }) => (
+  <div className="border border-[#00f3ff] p-3 rounded">
+    <p className="text-xs text-[#ff00ff] mb-2 uppercase tracking-widest">MODEL SELECTOR</p>
+    <select 
+      value={selectedModelId || ''}
+      onChange={(e) => onSelectModel(Number(e.target.value))}
+      disabled={isLoading}
+      className="w-full bg-[#0a0a0a] text-[#00f3ff] border border-[#00f3ff] p-2 text-xs rounded cursor-pointer"
+    >
+      <option value="">Select a model...</option>
+      {models.map(model => (
+        <option key={model.id} value={model.id}>
+          {model.name} ({model.engine}) - ${(model.costPer1kTokens / 100).toFixed(4)}/1K tokens
+        </option>
+      ))}
+    </select>
+  </div>
+);
+
+// Performance Stats Component
+interface PerformanceStatsProps {
+  traces: Array<{ latencyMs: number; costUsd: number; energyWh: number }>;
+}
+
+export const PerformanceStats: React.FC<PerformanceStatsProps> = ({ traces }) => {
+  if (traces.length === 0) return null;
+
+  const avgLatency = traces.reduce((sum, t) => sum + t.latencyMs, 0) / traces.length;
+  const totalCost = traces.reduce((sum, t) => sum + t.costUsd, 0);
+  const totalEnergy = traces.reduce((sum, t) => sum + t.energyWh, 0);
+
+  return (
+    <div className="border border-[#ff00ff] p-3 rounded">
+      <p className="text-xs text-[#ff00ff] mb-2 uppercase tracking-widest">PERFORMANCE METRICS</p>
+      <div className="grid grid-cols-3 gap-2 text-xs">
+        <div className="border border-[#00f3ff] p-2 rounded">
+          <p className="text-[#00f3ff]">Avg Latency</p>
+          <p className="text-[#ff00ff] font-bold">{avgLatency.toFixed(0)}ms</p>
+        </div>
+        <div className="border border-[#00f3ff] p-2 rounded">
+          <p className="text-[#00f3ff]">Total Cost</p>
+          <p className="text-[#ff00ff] font-bold">${(totalCost / 100).toFixed(4)}</p>
+        </div>
+        <div className="border border-[#00f3ff] p-2 rounded">
+          <p className="text-[#00f3ff]">Energy Used</p>
+          <p className="text-[#ff00ff] font-bold">{totalEnergy.toFixed(2)}Wh</p>
+        </div>
+      </div>
+    </div>
+  );
+};
