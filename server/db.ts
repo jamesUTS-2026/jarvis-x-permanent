@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, neuralMemory, chatHistory, userPreferences } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -87,6 +87,55 @@ export async function getUserByOpenId(openId: string) {
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
 
   return result.length > 0 ? result[0] : undefined;
+}
+
+// Memory queries
+export async function getUserMemory(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(neuralMemory).where(eq(neuralMemory.userId, userId)).orderBy(desc(neuralMemory.createdAt));
+}
+
+export async function addMemoryFact(userId: number, fact: string, importance: number = 1) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(neuralMemory).values({ userId, fact, importance });
+  return result;
+}
+
+// Chat history queries
+export async function getChatHistory(userId: number, limit: number = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(chatHistory).where(eq(chatHistory.userId, userId)).orderBy(desc(chatHistory.createdAt)).limit(limit);
+}
+
+export async function addChatMessage(userId: number, role: "user" | "assistant" | "system", content: string, thoughtProcess?: string, memoryUsed?: number[]) {
+  const db = await getDb();
+  if (!db) return null;
+  return db.insert(chatHistory).values({
+    userId,
+    role,
+    content,
+    thoughtProcess: thoughtProcess || null,
+    memoryUsed: memoryUsed ? JSON.stringify(memoryUsed) : null,
+  });
+}
+
+// User preferences queries
+export async function getUserPreferences(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(userPreferences).where(eq(userPreferences.userId, userId)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function upsertUserPreferences(userId: number, prefs: Partial<typeof userPreferences.$inferInsert>) {
+  const db = await getDb();
+  if (!db) return null;
+  return db.insert(userPreferences).values({ userId, ...prefs }).onDuplicateKeyUpdate({
+    set: prefs,
+  });
 }
 
 // TODO: add feature queries here as your schema grows.

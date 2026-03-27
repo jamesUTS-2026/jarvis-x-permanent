@@ -175,3 +175,43 @@
     }
   }
 }
+
+/* Cyberpunk Scrollbar */
+::-webkit-scrollbar {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #00f3ff;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #ff00ff;
+}
+
+/* Glitch Animation */
+.glitch {
+  animation: glitch-anim 4s infinite;
+}
+
+@keyframes glitch-anim {
+  0% { transform: translate(0); }
+  2% { transform: translate(-2px, 1px); }
+  4% { transform: translate(2px, -1px); }
+  6% { transform: translate(0); }
+  100% { transform: translate(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
