@@ -2,7 +2,6 @@ livekit
 livekit-agents
 livekit-plugins-silero
 livekit-plugins-openai
-groq
 python-dotenv
 aiohttp
 requests
