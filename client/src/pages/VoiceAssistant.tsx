@@ -1,9 +1,9 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
 import { JarvisLayout, JarvisHeader, Panel, Controls } from '@/components/JarvisLayout';
 import { Loader2 } from 'lucide-react';
-import { speak, stopSpeech, isSpeaking, pauseSpeech, resumeSpeech, type TTSConfig } from '@/lib/openaiTTS';
+import { speakWithProsody, stopSpeech, isSpeaking, initializeVoiceSynthesis, type VoiceConfig } from '@/lib/advancedVoice';
 
 interface Message {
   id: string;
@@ -32,15 +32,20 @@ export default function VoiceAssistant() {
     '> BOOTING KERNEL...',
     '> LOADING MEMORY MODULE...',
     '> ATTACHING REASONING LOOP...',
-    '> INITIALIZING VOICE ENGINE (OpenAI TTS)...',
+    '> INITIALIZING VOICE ENGINE...',
     '> READY.',
   ]);
   const [dataStream, setDataStream] = useState<string[]>([]);
 
   const recognitionRef = useRef<any>(null);
-  const ttsConfigRef = useRef<TTSConfig>({
-    voice: 'onyx',  // Deep male voice - Iron Man JARVIS style
-    speed: 1.0,
+  const voiceConfigRef = useRef<VoiceConfig>({
+    pitch: 0.75,
+    rate: 0.88,
+    volume: 1,
+    voiceProfile: 'jarvis',
+    enableEmphasis: true,
+    enablePauses: true,
+    enableStreaming: true,
   });
 
   // tRPC mutations and queries
@@ -51,11 +56,16 @@ export default function VoiceAssistant() {
   const getModelsQuery = trpc.models.listAvailable.useQuery(undefined, { enabled: isAuthenticated });
   const getTracesQuery = trpc.performance.getTraces.useQuery({ limit: 50 }, { enabled: isAuthenticated });
 
-  // Initialize OpenAI TTS and Speech Recognition
+  // Initialize Web Speech API and Voice Synthesis
   useEffect(() => {
-    // Initialize OpenAI TTS (no browser voice loading needed)
-    addDiagnostic('VOICE ENGINE READY');
-    console.log('[JARVIS] OpenAI TTS initialized - voice: onyx (deep male)');
+    // Initialize advanced voice synthesis with proper event listener
+    initializeVoiceSynthesis().then((voices) => {
+      console.log('[JARVIS] Voice system initialized with', voices.length, 'voices');
+      addDiagnostic('VOICE ENGINE READY');
+    }).catch((err) => {
+      console.error('[JARVIS] Voice initialization failed:', err);
+      addDiagnostic('VOICE ENGINE ERROR');
+    });
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
@@ -96,179 +106,242 @@ export default function VoiceAssistant() {
         id: msg.id.toString(),
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
+        thoughtProcess: msg.thoughtProcess || undefined,
         timestamp: new Date(msg.createdAt),
       }));
       setMessages(formattedMessages);
     }
   }, [getChatHistoryQuery.data]);
 
-  const addDiagnostic = useCallback((message: string) => {
-    setDiagnostics(prev => [...prev.slice(-9), message]);
-    setDataStream(prev => [...prev.slice(-19), `[${new Date().toISOString()}] ${message}`]);
+  // Data stream animation
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const hex = Math.random().toString(16).substring(2, 10).toUpperCase();
+      const line = `SYS_LOG::${hex}::${Date.now()}`;
+      setDataStream(prev => [line, ...prev.slice(0, 19)]);
+    }, 500);
+    return () => clearInterval(interval);
   }, []);
 
-  const handleUserMessage = useCallback(async (userInput: string) => {
-    if (!userInput.trim() || !isAuthenticated) return;
+  const addDiagnostic = (msg: string) => {
+    setDiagnostics(prev => [`> ${msg}`, ...prev.slice(0, 9)]);
+  };
 
-    const userMessage: Message = {
-      id: Math.random().toString(),
-      role: 'user',
-      content: userInput,
-      timestamp: new Date(),
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setIsLoading(true);
-    addDiagnostic(`USER: ${userInput.substring(0, 50)}...`);
+  const speak = async (text: string) => {
+    setIsSpeakingState(true);
+    addDiagnostic('VOICE SYNTHESIS INITIATED...');
 
     try {
-      const response = await processMessageMutation.mutateAsync({
-        userMessage: userInput,
-      });
+      // Update voice config from preferences, maintaining JARVIS profile
+      const prefs = getPreferencesQuery.data;
+      if (prefs) {
+        voiceConfigRef.current.pitch = Math.min(0.75, (prefs.voicePitch || 75) / 100);
+        voiceConfigRef.current.rate = Math.min(0.88, (prefs.voiceRate || 88) / 100);
+      } else {
+        voiceConfigRef.current.pitch = 0.75;
+        voiceConfigRef.current.rate = 0.88;
+      }
 
-      const assistantMessage: Message = {
-        id: Math.random().toString(),
-        role: 'assistant',
-        content: response.response,
-        thoughtProcess: response.thoughtProcess,
-        timestamp: new Date(),
-      };
-
-      setMessages(prev => [...prev, assistantMessage]);
-      addDiagnostic('RESPONSE GENERATED');
-
-      // Speak the response using OpenAI TTS
-      setIsSpeakingState(true);
-      addDiagnostic('SPEAKING...');
-      
-      await speak(response.response, ttsConfigRef.current, (progress) => {
-        if (progress === 100) {
-          addDiagnostic('SPEECH COMPLETE');
+      // Use advanced voice synthesis with prosody
+      await speakWithProsody(text, voiceConfigRef.current, (progress) => {
+        if (progress % 25 === 0) {
+          addDiagnostic(`SYNTHESIS: ${progress}%`);
         }
       });
-      
-      setIsSpeakingState(false);
+
+      addDiagnostic('VOICE SYNTHESIS COMPLETE.');
     } catch (error) {
-      console.error('Error processing message:', error);
-      addDiagnostic('ERROR: PROCESSING FAILED');
+      addDiagnostic(`VOICE ERROR: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsSpeakingState(false);
+    }
+  };
+
+  const handleUserMessage = async (text: string) => {
+    if (!text.trim() || isLoading) return;
+
+    // Add user message to UI
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: text,
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, userMsg]);
+
+    setIsLoading(true);
+    addDiagnostic('NEURAL PROCESSING INITIATED...');
+
+    try {
+      const result = await processMessageMutation.mutateAsync({
+        userMessage: text,
+      });
+
+      // Add assistant message
+      const assistantMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: result.response,
+        thoughtProcess: result.thoughtProcess,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, assistantMsg]);
+
+      // Update memory if learned
+      if (result.learned) {
+        addDiagnostic(`MEMORY UPDATED: ${result.learned}`);
+        getMemoryQuery.refetch();
+      }
+
+      addDiagnostic('PREPARING VOICE OUTPUT...');
+      // Speak response with advanced prosody
+      await speak(result.response);
+    } catch (error) {
+      addDiagnostic('ERROR: NEURAL_LINK_FAILURE');
+      const errorMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: 'Neural link disrupted. Please try again.',
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    } finally {
       setIsLoading(false);
     }
+  };
 
-    setIsLoading(false);
-  }, [isAuthenticated, processMessageMutation, addDiagnostic]);
-
-  const handleVoiceInput = useCallback(() => {
-    if (!recognitionRef.current) return;
-
-    if (isListening) {
-      recognitionRef.current.stop();
+  const handleMicClick = () => {
+    if (isSpeaking()) {
+      stopSpeech();
+      setIsSpeakingState(false);
+    } else if (isListening) {
+      recognitionRef.current?.stop();
     } else {
-      recognitionRef.current.start();
+      recognitionRef.current?.start();
     }
-  }, [isListening]);
+  };
 
-  const handleStopSpeech = useCallback(() => {
-    stopSpeech();
-    setIsSpeakingState(false);
-    addDiagnostic('SPEECH STOPPED');
-  }, [addDiagnostic]);
+  const handleSend = async (text: string) => {
+    await handleUserMessage(text);
+  };
 
-  const handleTextInput = useCallback((text: string) => {
-    handleUserMessage(text);
-  }, [handleUserMessage]);
-
+  // Auto-scroll chat
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [messages]);
 
+  if (!isAuthenticated) {
+    return (
+      <JarvisLayout>
+        <div className="h-screen flex items-center justify-center">
+          <div className="text-center">
+            <h1 className="text-4xl font-bold mb-4">JARVIS X</h1>
+            <p className="text-lg mb-8">Please log in to access the neural interface</p>
+            <Loader2 className="animate-spin mx-auto" />
+          </div>
+        </div>
+      </JarvisLayout>
+    );
+  }
+
   return (
     <JarvisLayout>
       <JarvisHeader 
         isListening={isListening}
-        apiLinked={isAuthenticated}
+        apiLinked={true}
         memoryCount={memory.length}
         isLearning={isLoading}
       />
-      
-      <div className="grid grid-cols-3 gap-4 h-full p-4">
-        {/* Neural Memory Panel */}
-        <Panel title="NEURAL MEMORY">
-          <div className="space-y-2 text-sm">
-            <div className="text-cyan-400">
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 h-[calc(100vh-120px)]">
+        {/* Memory Panel */}
+        <Panel title="Neural Memory" className="md:col-span-1">
+          <div className="space-y-2">
+            <div className="text-xs text-[#00f3ff] mb-3">
               {memory.length} UNITS STORED
             </div>
             {memory.length === 0 ? (
-              <div className="text-gray-500 text-xs">
+              <div className="text-xs text-[rgba(0,243,255,0.5)]">
                 No memories yet. Share something about yourself to begin learning.
               </div>
             ) : (
-              <div className="space-y-1 max-h-96 overflow-y-auto">
-                {memory.map(item => (
-                  <div key={item.id} className="text-cyan-300 text-xs border-l border-cyan-500 pl-2">
-                    {item.fact}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </Panel>
-
-        {/* Communication Interface */}
-        <Panel title="COMMUNICATION INTERFACE">
-          <div 
-            ref={chatContainerRef}
-            className="space-y-3 max-h-96 overflow-y-auto mb-4"
-          >
-            {messages.length === 0 ? (
-              <div className="text-cyan-400 text-sm">
-                I am here, ready to assist. Please let me know how I can help.
-              </div>
-            ) : (
-              messages.map(msg => (
-                <div key={msg.id} className={`text-sm ${msg.role === 'user' ? 'text-purple-400' : 'text-cyan-400'}`}>
-                  <div className="font-bold">{msg.role === 'user' ? 'YOU' : 'JARVIS X'}:</div>
-                  <div className="ml-2">{msg.content}</div>
-                  {msg.thoughtProcess && (
-                    <div className="text-gray-500 text-xs ml-2 mt-1">
-                      [Thought: {msg.thoughtProcess}]
-                    </div>
-                  )}
+              memory.map(item => (
+                <div key={item.id} className="text-xs p-2 bg-[rgba(0,243,255,0.05)] border-l-2 border-[#ff00ff]">
+                  <span className="text-[#ff00ff] font-bold">[FACT]</span> {item.fact}
                 </div>
               ))
             )}
-            {isLoading && <Loader2 className="animate-spin text-cyan-400" />}
           </div>
-
-          <Controls
-            isListening={isListening}
-            isLoading={isLoading}
-            onMicClick={handleVoiceInput}
-            onSend={handleTextInput}
-          />
         </Panel>
 
-        {/* System Diagnostics */}
-        <Panel title="SYSTEM DIAGNOSTICS">
-          <div className="space-y-1 text-xs font-mono max-h-96 overflow-y-auto">
+        {/* Chat Panel */}
+        <Panel title="Communication Interface" className="md:col-span-1">
+          <div ref={chatContainerRef} className="space-y-3 h-full overflow-y-auto">
+            {messages.length === 0 ? (
+              <div className="text-xs text-[rgba(0,243,255,0.5)]">
+                System online. Jarvis X at your service. How shall we proceed?
+              </div>
+            ) : (
+              messages.map(msg => (
+                <div key={msg.id} className={msg.role === 'user' ? 'text-right' : 'text-left'}>
+                  {msg.thoughtProcess && (
+                    <div className="text-xs text-[rgba(0,243,255,0.5)] italic mb-1">
+                      {msg.thoughtProcess}
+                    </div>
+                  )}
+                  <div
+                    className={`inline-block max-w-xs p-2 text-xs ${
+                      msg.role === 'user'
+                        ? 'bg-[rgba(255,0,255,0.1)] border-r-2 border-[#ff00ff] text-white'
+                        : 'bg-[rgba(0,243,255,0.1)] border-l-2 border-[#00f3ff] text-[#00f3ff]'
+                    }`}
+                  >
+                    {msg.content}
+                  </div>
+                </div>
+              ))
+            )}
+            {isLoading && (
+              <div className="text-xs text-[#00f3ff] animate-pulse">
+                Thinking...
+              </div>
+            )}
+            {isSpeakingState && (
+              <div className="text-xs text-[#ff00ff] animate-pulse">
+                Speaking...
+              </div>
+            )}
+          </div>
+        </Panel>
+
+        {/* Diagnostics Panel */}
+        <Panel title="System Diagnostics" className="md:col-span-1">
+          <div className="space-y-1">
             {diagnostics.map((diag, i) => (
-              <div key={i} className="text-yellow-400">
+              <div key={i} className="text-xs text-[rgba(0,243,255,0.6)] font-mono">
                 {diag}
               </div>
             ))}
-          </div>
-          
-          <div className="mt-4 pt-4 border-t border-cyan-500">
-            <div className="text-cyan-400 text-xs font-bold mb-2">LIVE STREAM</div>
-            <div className="space-y-1 text-purple-400 text-xs max-h-32 overflow-y-auto">
-              {dataStream.map((data, i) => (
-                <div key={i}>{data}</div>
+            <div className="mt-4 pt-4 border-t border-[rgba(0,243,255,0.2)]">
+              <div className="text-xs font-bold text-[#f3ff00] mb-2">LIVE STREAM</div>
+              {dataStream.map((line, i) => (
+                <div key={i} className="text-xs text-[rgba(255,0,255,0.4)] font-mono">
+                  {line}
+                </div>
               ))}
             </div>
           </div>
         </Panel>
       </div>
+
+      <Controls
+        onSend={handleSend}
+        onMicClick={handleMicClick}
+        isListening={isListening}
+        isLoading={isLoading}
+      />
     </JarvisLayout>
   );
 }
