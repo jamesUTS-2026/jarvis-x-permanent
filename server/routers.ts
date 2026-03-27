@@ -4,7 +4,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
-import { getUserMemory, addMemoryFact, getChatHistory, addChatMessage, getUserPreferences, upsertUserPreferences } from "./db";
+import { getUserMemory, addMemoryFact, getChatHistory, addChatMessage, getUserPreferences, upsertUserPreferences, getAvailableModels, getModelById, addInteractionTrace, getUserTraces, getModelStats, addPerformanceMetric, getUserModelPreferences, upsertUserModelPreferences } from "./db";
 import { invokeLLM } from "./_core/llm";
 
 export const appRouter = router({
@@ -141,6 +141,106 @@ IMPORTANT:
       }))
       .mutation(async ({ ctx, input }) => {
         await upsertUserPreferences(ctx.user.id, input);
+        return { success: true };
+      }),
+  }),
+
+  // Models and inference engines
+  models: router({
+    listAvailable: protectedProcedure.query(async () => {
+      return await getAvailableModels();
+    }),
+
+    getDetails: protectedProcedure
+      .input(z.object({ modelId: z.number() }))
+      .query(async ({ input }) => {
+        return await getModelById(input.modelId);
+      }),
+
+    getStats: protectedProcedure
+      .input(z.object({ modelId: z.number() }))
+      .query(async ({ input }) => {
+        return await getModelStats(input.modelId);
+      }),
+  }),
+
+  // Performance and learning
+  performance: router({
+    getTraces: protectedProcedure
+      .input(z.object({ limit: z.number().default(100) }))
+      .query(async ({ ctx, input }) => {
+        return await getUserTraces(ctx.user.id, input.limit);
+      }),
+
+    getMetrics: protectedProcedure
+      .input(z.object({ limit: z.number().default(100) }))
+      .query(async ({ ctx, input }) => {
+        return await getUserTraces(ctx.user.id, input.limit);
+      }),
+
+    recordTrace: protectedProcedure
+      .input(z.object({
+        modelId: z.number(),
+        inputText: z.string(),
+        outputText: z.string(),
+        latencyMs: z.number(),
+        costUsd: z.number().default(0),
+        energyWh: z.number().default(0),
+        qualityScore: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await addInteractionTrace({
+          userId: ctx.user.id,
+          modelId: input.modelId,
+          inputText: input.inputText,
+          outputText: input.outputText,
+          latencyMs: input.latencyMs,
+          costUsd: input.costUsd,
+          energyWh: input.energyWh,
+          qualityScore: input.qualityScore || null,
+        });
+        return { success: true };
+      }),
+
+    recordMetric: protectedProcedure
+      .input(z.object({
+        modelId: z.number().optional(),
+        metricType: z.enum(["latency", "cost", "energy", "accuracy"]),
+        value: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await addPerformanceMetric({
+          userId: ctx.user.id,
+          modelId: input.modelId || null,
+          metricType: input.metricType,
+          value: input.value,
+        });
+        return { success: true };
+      }),
+  }),
+
+  // User model preferences
+  preferences: router({
+    getModelPreferences: protectedProcedure.query(async ({ ctx }) => {
+      return await getUserModelPreferences(ctx.user.id);
+    }),
+
+    updateModelPreferences: protectedProcedure
+      .input(z.object({
+        preferredModelId: z.number().optional(),
+        enginePreference: z.enum(["local", "cloud", "auto"]).optional(),
+        costOptimization: z.boolean().optional(),
+        latencyOptimization: z.boolean().optional(),
+        energyOptimization: z.boolean().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await upsertUserModelPreferences(ctx.user.id, {
+          preferredModelId: input.preferredModelId,
+          enginePreference: input.enginePreference,
+          costOptimization: input.costOptimization ? 1 : 0,
+          latencyOptimization: input.latencyOptimization ? 1 : 0,
+          energyOptimization: input.energyOptimization ? 1 : 0,
+        });
         return { success: true };
       }),
   }),

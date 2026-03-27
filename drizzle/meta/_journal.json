@@ -15,6 +15,13 @@
       "when": 1774582649920,
       "tag": "0001_sticky_dracula",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1774588140057,
+      "tag": "0002_brown_menace",
+      "breakpoints": true
     }
   ]
 }

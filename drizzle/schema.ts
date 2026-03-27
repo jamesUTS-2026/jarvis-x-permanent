@@ -72,3 +72,77 @@ export const userPreferences = mysqlTable("user_preferences", {
 
 export type UserPreferences = typeof userPreferences.$inferSelect;
 export type InsertUserPreferences = typeof userPreferences.$inferInsert;
+
+/**
+ * AI Models: Registry of available models (local and cloud)
+ */
+export const aiModels = mysqlTable("ai_models", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull().unique(),
+  engine: mysqlEnum("engine", ["local", "cloud"]).notNull(),
+  provider: varchar("provider", { length: 100 }).notNull(),
+  costPer1kTokens: int("costPer1kTokens").default(0).notNull(),
+  avgLatencyMs: int("avgLatencyMs").default(0).notNull(),
+  maxTokens: int("maxTokens").default(4096).notNull(),
+  supportsVision: int("supportsVision").default(0).notNull(),
+  isActive: int("isActive").default(1).notNull(),
+  metadata: text("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AIModel = typeof aiModels.$inferSelect;
+export type InsertAIModel = typeof aiModels.$inferInsert;
+
+/**
+ * Interaction Traces: Logs for learning loop
+ */
+export const interactionTraces = mysqlTable("interaction_traces", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  modelId: int("modelId").notNull().references(() => aiModels.id),
+  inputText: text("inputText").notNull(),
+  outputText: text("outputText").notNull(),
+  latencyMs: int("latencyMs").notNull(),
+  costUsd: int("costUsd").default(0).notNull(),
+  energyWh: int("energyWh").default(0).notNull(),
+  qualityScore: int("qualityScore"),
+  userFeedback: text("userFeedback"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type InteractionTrace = typeof interactionTraces.$inferSelect;
+export type InsertInteractionTrace = typeof interactionTraces.$inferInsert;
+
+/**
+ * Performance Metrics: Aggregated performance data
+ */
+export const performanceMetrics = mysqlTable("performance_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  modelId: int("modelId").references(() => aiModels.id),
+  metricType: mysqlEnum("metricType", ["latency", "cost", "energy", "accuracy"]).notNull(),
+  value: int("value").notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
+export type PerformanceMetric = typeof performanceMetrics.$inferSelect;
+export type InsertPerformanceMetric = typeof performanceMetrics.$inferInsert;
+
+/**
+ * User Model Preferences: User's preferred models and engine settings
+ */
+export const userModelPreferences = mysqlTable("user_model_preferences", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  preferredModelId: int("preferredModelId").references(() => aiModels.id),
+  enginePreference: mysqlEnum("enginePreference", ["local", "cloud", "auto"]).default("auto").notNull(),
+  costOptimization: int("costOptimization").default(0).notNull(),
+  latencyOptimization: int("latencyOptimization").default(0).notNull(),
+  energyOptimization: int("energyOptimization").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UserModelPreference = typeof userModelPreferences.$inferSelect;
+export type InsertUserModelPreference = typeof userModelPreferences.$inferInsert;
