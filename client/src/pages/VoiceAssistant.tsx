@@ -273,6 +273,7 @@ export default function VoiceAssistant() {
     } else if (isListening) {
       recognitionRef.current?.stop();
     } else {
+      // Start listening - permission will be requested by Web Speech API
       backgroundListenerRef.current?.start();
     }
   };
