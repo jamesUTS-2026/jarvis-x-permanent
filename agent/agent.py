@@ -8,14 +8,11 @@ Uses Groq for free LLM inference
 import os
 import json
 import logging
-import asyncio
 from datetime import datetime
-from typing import Optional
 from dotenv import load_dotenv
 
 from livekit import agents
-from livekit.agents import AutoSubscribe, JobContext, WorkerOptions
-from livekit.agents.voice_assistant import VoiceAssistant
+from livekit.agents import JobContext, WorkerOptions, llm
 from livekit.plugins import silero, openai
 from groq import Groq
 import aiohttp
@@ -35,6 +32,28 @@ LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 
+class GroqLLM:
+    """Wrapper for Groq LLM to work with LiveKit agents"""
+
+    def __init__(self, api_key: str):
+        self.client = Groq(api_key=api_key)
+        self.conversation_history = []
+
+    async def agenerate(self, messages, **kwargs):
+        """Generate response using Groq"""
+        try:
+            response = self.client.chat.completions.create(
+                model="mixtral-8x7b-32768",
+                messages=messages,
+                temperature=kwargs.get("temperature", 0.7),
+                max_tokens=kwargs.get("max_tokens", 500),
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"Groq error: {e}")
+            return "I encountered an error processing your request."
+
+
 class ToolExecutor:
     """Execute various tools for JARVIS"""
 
@@ -43,7 +62,6 @@ class ToolExecutor:
         """Search the web for information"""
         try:
             async with aiohttp.ClientSession() as session:
-                # Using DuckDuckGo API (free, no key required)
                 url = f"https://api.duckduckgo.com/?q={query}&format=json"
                 async with session.get(url) as resp:
                     data = await resp.json()
@@ -58,7 +76,6 @@ class ToolExecutor:
     async def get_weather(city: str) -> str:
         """Get weather information"""
         try:
-            # Using Open-Meteo API (free, no key required)
             url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en&format=json"
             response = requests.get(url)
             data = response.json()
@@ -70,7 +87,6 @@ class ToolExecutor:
             latitude = location["latitude"]
             longitude = location["longitude"]
 
-            # Get weather data
             weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,weather_code,wind_speed_10m&temperature_unit=celsius"
             weather_response = requests.get(weather_url)
             weather_data = weather_response.json()
@@ -80,7 +96,6 @@ class ToolExecutor:
             wind = current["wind_speed_10m"]
             weather_code = current["weather_code"]
 
-            # Simple weather code interpretation
             weather_desc = {
                 0: "Clear sky",
                 1: "Mainly clear",
@@ -120,29 +135,21 @@ class ToolExecutor:
             return f"Unknown tool: {tool_name}"
 
 
-class JarvisAgent(VoiceAssistant):
-    """
-    JARVIS X - Real-time voice AI assistant
-    Handles speech-to-text, LLM processing, tool execution, and text-to-speech
-    """
+class JarvisAgent:
+    """JARVIS X - Real-time voice AI assistant"""
 
     def __init__(self):
-        super().__init__()
         self.conversation_history = []
         self.memory = []
         self.tool_executor = ToolExecutor()
-        self.groq_client = Groq(api_key=GROQ_API_KEY)
+        self.groq_llm = GroqLLM(GROQ_API_KEY)
 
-    async def on_message_received(self, message: str) -> str:
-        """
-        Process user message and generate response
-        """
+    async def process_message(self, message: str) -> str:
+        """Process user message and generate response"""
         logger.info(f"User: {message}")
 
-        # Add to conversation history
         self.conversation_history.append({"role": "user", "content": message})
 
-        # Build system prompt with tool information
         system_prompt = """You are JARVIS X, an advanced AI assistant inspired by Iron Man's JARVIS.
 You are intelligent, sophisticated, and always ready to help.
 Respond naturally and conversationally.
@@ -150,9 +157,9 @@ Keep responses concise but informative.
 Always be respectful and professional.
 
 You have access to the following tools:
-- web_search: Search the internet for information. Use when user asks about current events, facts, or information.
-- weather: Get weather information for a city. Use when user asks about weather.
-- time: Get the current time. Use when user asks for the time.
+- web_search: Search the internet for information
+- weather: Get weather information for a city
+- time: Get the current time
 
 When you need to use a tool, respond with JSON in this format:
 {"tool": "tool_name", "input": {"param": "value"}}
@@ -160,16 +167,9 @@ When you need to use a tool, respond with JSON in this format:
 Then provide a response based on the tool result."""
 
         try:
-            # Call Groq API (free LLM)
-            response = self.groq_client.chat.completions.create(
-                model="mixtral-8x7b-32768",
-                system=system_prompt,
-                messages=self.conversation_history,
-                temperature=0.7,
-                max_tokens=500,
-            )
+            messages = [{"role": "system", "content": system_prompt}] + self.conversation_history
 
-            response_text = response.choices[0].message.content
+            response_text = await self.groq_llm.agenerate(messages)
 
             # Check if response contains tool call
             if response_text.strip().startswith("{"):
@@ -181,7 +181,6 @@ Then provide a response based on the tool result."""
                         )
                         logger.info(f"Tool result: {tool_result}")
 
-                        # Add tool result to conversation and get final response
                         self.conversation_history.append(
                             {"role": "assistant", "content": response_text}
                         )
@@ -192,26 +191,17 @@ Then provide a response based on the tool result."""
                             }
                         )
 
-                        # Get final response
-                        final_response = self.groq_client.chat.completions.create(
-                            model="mixtral-8x7b-32768",
-                            system=system_prompt,
-                            messages=self.conversation_history,
-                            temperature=0.7,
-                            max_tokens=300,
-                        )
-                        response_text = final_response.choices[0].message.content
+                        messages = [{"role": "system", "content": system_prompt}] + self.conversation_history
+                        response_text = await self.groq_llm.agenerate(messages)
                 except json.JSONDecodeError:
-                    pass  # Not a tool call, treat as normal response
+                    pass
 
             logger.info(f"JARVIS: {response_text}")
 
-            # Add to conversation history
             self.conversation_history.append(
                 {"role": "assistant", "content": response_text}
             )
 
-            # Store in memory if it's important
             if any(
                 keyword in message.lower()
                 for keyword in ["remember", "note", "save", "important"]
@@ -224,7 +214,6 @@ Then provide a response based on the tool result."""
                     }
                 )
 
-            # Keep only last 20 messages for context
             if len(self.conversation_history) > 20:
                 self.conversation_history = self.conversation_history[-20:]
 
@@ -236,32 +225,38 @@ Then provide a response based on the tool result."""
 
 
 async def entrypoint(ctx: JobContext):
-    """
-    Main entry point for the LiveKit agent
-    """
+    """Main entry point for the LiveKit agent"""
     logger.info("Starting JARVIS X Agent...")
     logger.info(f"Room: {ctx.room.name}, Participant: {ctx.participant.name}")
 
-    # Initialize agent
     agent = JarvisAgent()
 
-    # Configure voice assistant with LiveKit
-    # Using OpenAI TTS for voice output (high quality)
-    await agent.astart(
-        ctx.room,
-        ctx.participant,
-        # Speech-to-Text using Silero (free, runs locally)
+    # Create a simple voice assistant using LiveKit agents
+    initial_ctx = llm.ChatContext()
+    initial_ctx.messages.append(
+        llm.ChatMessage(
+            role="system",
+            content="You are JARVIS X, an advanced AI assistant. Respond naturally and conversationally.",
+        )
+    )
+
+    await agents.VoiceAssistantOptions(
+        model=agents.llm.LLMOptions(
+            model="gpt-4",  # Fallback model name
+            temperature=0.7,
+        ),
         stt=silero.STT.create(),
-        # Text-to-Speech using OpenAI (high quality voice)
         tts=openai.TTS.create(
             model="tts-1-hd",
             voice="onyx",
         ),
-    )
+        chat_ctx=initial_ctx,
+    ).with_fns(
+        on_message_received=agent.process_message,
+    ).astart(ctx.room, ctx.participant)
 
 
 if __name__ == "__main__":
-    # Run the agent
     worker_options = WorkerOptions(
         entrypoint=entrypoint,
         prewarm_pool=1,
