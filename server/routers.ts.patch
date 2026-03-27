@@ -1,0 +1,29 @@
+--- a/server/routers.ts
++++ b/server/routers.ts
+@@ -143,6 +143,26 @@ export const appRouter = router({
+         await upsertUserPreferences(ctx.user.id, input);
+         return { success: true };
+       }),
++
++      // AI control: Open microphone
++      openMic: protectedProcedure
++        .mutation(async ({ ctx }) => {
++          return {
++            success: true,
++            action: 'open_mic',
++            message: 'Microphone activated',
++          };
++        }),
++
++      // AI control: Close microphone
++      closeMic: protectedProcedure
++        .mutation(async ({ ctx }) => {
++          return {
++            success: true,
++            action: 'close_mic',
++            message: 'Microphone deactivated',
++          };
++        }),
+   }),
+ 
+   // Models and inference engines

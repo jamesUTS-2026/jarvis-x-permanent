@@ -6,6 +6,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { getUserMemory, addMemoryFact, getChatHistory, addChatMessage, getUserPreferences, upsertUserPreferences, getAvailableModels, getModelById, addInteractionTrace, getUserTraces, getModelStats, addPerformanceMetric, getUserModelPreferences, upsertUserModelPreferences } from "./db";
 import { invokeLLM } from "./_core/llm";
+import { livekitRouter } from "./routers/livekit";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -244,6 +245,9 @@ IMPORTANT:
         return { success: true };
       }),
   }),
+
+  // LiveKit voice communication
+  livekit: livekitRouter,
 });
 
 export type AppRouter = typeof appRouter;

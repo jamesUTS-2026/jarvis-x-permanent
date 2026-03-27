@@ -37,7 +37,10 @@ export default function VoiceAssistant() {
   ]);
   const [dataStream, setDataStream] = useState<string[]>([]);
 
-  const recognitionRef = useRef<any>(null);
+  const backgroundListenerRef = useRef<any>(null);
+  const isWakeWordListeningRef = useRef<boolean>(true);
+  const wakeWordRef = useRef<string>('open mic');
+    const recognitionRef = useRef<any>(null);
   const voiceConfigRef = useRef<VoiceConfig>({
     pitch: 0.75,
     rate: 0.88,
@@ -75,7 +78,7 @@ export default function VoiceAssistant() {
 
       recognitionRef.current.onstart = () => {
         setIsListening(true);
-        addDiagnostic('LISTENING...');
+        addDiagnostic('WAITING FOR WAKE WORD...');
       };
 
       recognitionRef.current.onend = () => {
@@ -90,6 +93,48 @@ export default function VoiceAssistant() {
       recognitionRef.current.onerror = (event: any) => {
         addDiagnostic(`ERROR: ${event.error.toUpperCase()}`);
       };
+
+      // Setup background listener for wake word detection
+      const SpeechRecognitionBg = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognitionBg) {
+        backgroundListenerRef.current = new SpeechRecognitionBg();
+        backgroundListenerRef.current.continuous = true;
+        backgroundListenerRef.current.interimResults = false;
+
+        backgroundListenerRef.current.onstart = () => {
+          addDiagnostic('BACKGROUND LISTENER ACTIVE');
+        };
+
+        backgroundListenerRef.current.onresult = (event: any) => {
+          if (isWakeWordListeningRef.current) {
+            const transcript = event.results[event.results.length - 1][0].transcript.toLowerCase();
+            if (transcript.includes('open') && transcript.includes('mic')) {
+              addDiagnostic('WAKE WORD DETECTED - OPENING MIC');
+              isWakeWordListeningRef.current = false;
+              backgroundListenerRef.current?.stop();
+              backgroundListenerRef.current?.start();
+            }
+          }
+        };
+
+        backgroundListenerRef.current.onerror = (event: any) => {
+          setTimeout(() => {
+            if (isWakeWordListeningRef.current) {
+              backgroundListenerRef.current?.start();
+            }
+          }, 1000);
+        };
+
+        backgroundListenerRef.current.onend = () => {
+          if (isWakeWordListeningRef.current) {
+            setTimeout(() => {
+              backgroundListenerRef.current?.start();
+            }, 500);
+          }
+        };
+
+        backgroundListenerRef.current.start();
+      }
     }
   }, []);
 
@@ -198,8 +243,8 @@ export default function VoiceAssistant() {
 
       // Auto-restart listening after response
       setTimeout(() => {
-        recognitionRef.current?.start();
-        addDiagnostic('LISTENING...');
+        backgroundListenerRef.current?.start();
+        addDiagnostic('WAITING FOR WAKE WORD...');
       }, 500);
     } catch (error) {
       addDiagnostic('ERROR: NEURAL_LINK_FAILURE');
@@ -213,8 +258,8 @@ export default function VoiceAssistant() {
 
       // Auto-restart listening even on error
       setTimeout(() => {
-        recognitionRef.current?.start();
-        addDiagnostic('LISTENING...');
+        backgroundListenerRef.current?.start();
+        addDiagnostic('WAITING FOR WAKE WORD...');
       }, 500);
     } finally {
       setIsLoading(false);
@@ -228,7 +273,7 @@ export default function VoiceAssistant() {
     } else if (isListening) {
       recognitionRef.current?.stop();
     } else {
-      recognitionRef.current?.start();
+      backgroundListenerRef.current?.start();
     }
   };
 
