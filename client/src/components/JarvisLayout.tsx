@@ -52,6 +52,7 @@ interface HeaderProps {
   apiLinked: boolean;
   memoryCount: number;
   isLearning: boolean;
+  isWakeWordMode?: boolean;
 }
 
 export const JarvisHeader: React.FC<HeaderProps> = ({
@@ -59,6 +60,7 @@ export const JarvisHeader: React.FC<HeaderProps> = ({
   apiLinked,
   memoryCount,
   isLearning,
+  isWakeWordMode,
 }) => {
   return (
     <header className="relative z-10 border-b border-[#00f3ff] bg-[rgba(10,10,10,0.9)] px-6 py-4 flex justify-between items-center shadow-[0_0_15px_rgba(0,243,255,0.4)]">
@@ -69,7 +71,7 @@ export const JarvisHeader: React.FC<HeaderProps> = ({
         <p className="text-xs tracking-widest text-[#ff00ff]">EVOLVED NEURAL CORE v3.0</p>
       </div>
 
-      <div className="grid grid-cols-4 gap-4 text-xs">
+      <div className="grid grid-cols-5 gap-4 text-xs">
         <StatusItem 
           label="VOICE" 
           active={true}
@@ -85,6 +87,10 @@ export const JarvisHeader: React.FC<HeaderProps> = ({
         <StatusItem 
           label="LEARN" 
           active={isLearning}
+        />
+        <StatusItem 
+          label={isWakeWordMode ? 'WAKE' : 'CMD'} 
+          active={!isWakeWordMode}
         />
       </div>
     </header>

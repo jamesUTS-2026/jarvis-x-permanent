@@ -28,6 +28,7 @@ export default function VoiceAssistant() {
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeakingState, setIsSpeakingState] = useState(false);
+  const [isWakeWordMode, setIsWakeWordMode] = useState(true);
   const [diagnostics, setDiagnostics] = useState<string[]>([
     '> BOOTING KERNEL...',
     '> LOADING MEMORY MODULE...',
@@ -36,6 +37,9 @@ export default function VoiceAssistant() {
     '> READY.',
   ]);
   const [dataStream, setDataStream] = useState<string[]>([]);
+
+  const wakeWordRef = useRef<string>('jarvis open mic');
+  const isWaitingForWakeWordRef = useRef<boolean>(true);
 
   const recognitionRef = useRef<any>(null);
   const voiceConfigRef = useRef<VoiceConfig>({
@@ -83,8 +87,26 @@ export default function VoiceAssistant() {
       };
 
       recognitionRef.current.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        handleUserMessage(transcript);
+        const transcript = event.results[0][0].transcript.toLowerCase();
+        
+        if (isWaitingForWakeWordRef.current) {
+          if (transcript.includes('jarvis') && transcript.includes('open') && transcript.includes('mic')) {
+            addDiagnostic('WAKE WORD DETECTED');
+            setIsWakeWordMode(false);
+            isWaitingForWakeWordRef.current = false;
+            addDiagnostic('COMMAND MODE ACTIVATED');
+            setTimeout(() => {
+              recognitionRef.current?.start();
+              addDiagnostic('LISTENING FOR COMMAND...');
+            }, 500);
+          } else {
+            setTimeout(() => {
+              recognitionRef.current?.start();
+            }, 500);
+          }
+        } else {
+          handleUserMessage(transcript);
+        }
       };
 
       recognitionRef.current.onerror = (event: any) => {
@@ -196,10 +218,12 @@ export default function VoiceAssistant() {
       addDiagnostic('PREPARING VOICE OUTPUT...');
       await speak(result.response);
 
-      // Auto-restart listening after response
+      // Reset to wake word mode and auto-restart listening
+      isWaitingForWakeWordRef.current = true;
+      setIsWakeWordMode(true);
       setTimeout(() => {
         recognitionRef.current?.start();
-        addDiagnostic('LISTENING...');
+        addDiagnostic('WAITING FOR WAKE WORD...');
       }, 500);
     } catch (error) {
       addDiagnostic('ERROR: NEURAL_LINK_FAILURE');
@@ -211,10 +235,12 @@ export default function VoiceAssistant() {
       };
       setMessages(prev => [...prev, errorMsg]);
 
-      // Auto-restart listening even on error
+      // Reset to wake word mode and auto-restart listening
+      isWaitingForWakeWordRef.current = true;
+      setIsWakeWordMode(true);
       setTimeout(() => {
         recognitionRef.current?.start();
-        addDiagnostic('LISTENING...');
+        addDiagnostic('WAITING FOR WAKE WORD...');
       }, 500);
     } finally {
       setIsLoading(false);
@@ -264,6 +290,7 @@ export default function VoiceAssistant() {
         apiLinked={true}
         memoryCount={memory.length}
         isLearning={isLoading}
+        isWakeWordMode={isWakeWordMode}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 h-[calc(100vh-120px)]">
