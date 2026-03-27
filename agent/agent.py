@@ -16,7 +16,8 @@ from dotenv import load_dotenv
 from livekit import agents, llm
 from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, llm as agents_llm
 from livekit.agents.voice_assistant import VoiceAssistant
-from livekit.plugins import openai, silero
+from livekit.plugins import silero
+from groq import Groq
 import aiohttp
 import requests
 
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 LIVEKIT_URL = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 
 class ToolExecutor:
@@ -130,6 +131,7 @@ class JarvisAgent(VoiceAssistant):
         self.conversation_history = []
         self.memory = []
         self.tool_executor = ToolExecutor()
+        self.groq_client = Groq(api_key=GROQ_API_KEY)
 
     async def on_message_received(self, message: str) -> str:
         """
@@ -158,16 +160,16 @@ When you need to use a tool, respond with JSON in this format:
 Then provide a response based on the tool result."""
 
         try:
-            # Call OpenAI API
-            response = await openai.LLM.acreate(
-                model="gpt-4",
+            # Call Groq API (free LLM)
+            response = self.groq_client.chat.completions.create(
+                model="mixtral-8x7b-32768",
                 system=system_prompt,
                 messages=self.conversation_history,
                 temperature=0.7,
                 max_tokens=500,
             )
 
-            response_text = response.content
+            response_text = response.choices[0].message.content
 
             # Check if response contains tool call
             if response_text.strip().startswith("{"):
@@ -191,14 +193,14 @@ Then provide a response based on the tool result."""
                         )
 
                         # Get final response
-                        final_response = await openai.LLM.acreate(
-                            model="gpt-4",
+                        final_response = self.groq_client.chat.completions.create(
+                            model="mixtral-8x7b-32768",
                             system=system_prompt,
                             messages=self.conversation_history,
                             temperature=0.7,
                             max_tokens=300,
                         )
-                        response_text = final_response.content
+                        response_text = final_response.choices[0].message.content
                 except json.JSONDecodeError:
                     pass  # Not a tool call, treat as normal response
 
@@ -249,10 +251,10 @@ async def entrypoint(ctx: JobContext):
         ctx.participant,
         # Speech-to-Text using Silero (free, runs locally)
         stt=silero.STT.create(),
-        # LLM using OpenAI
-        llm=openai.LLM.create(
-            model="gpt-4",
-            api_key=OPENAI_API_KEY,
+        # LLM using Groq (free, fast)
+        llm=agents_llm.LLM.create(
+            model="mixtral-8x7b-32768",
+            api_key=GROQ_API_KEY,
         ),
         # Text-to-Speech using OpenAI
         tts=openai.TTS.create(
