@@ -5,12 +5,14 @@ Handles inference engine routing, local model support, and cloud fallback
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
 import os
 import httpx
 import asyncio
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
@@ -29,6 +31,10 @@ app.add_middleware(
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+# Initialize OpenAI client
+openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 # Models
 class InferenceRequest(BaseModel):
@@ -54,6 +60,19 @@ class ModelInfo(BaseModel):
     cost_per_1k_tokens: float = 0.0
     latency_ms: float = 0.0
     available: bool
+
+class TTSRequest(BaseModel):
+    """Request for text-to-speech synthesis"""
+    text: str
+    voice: str = "onyx"  # Deep male voice
+    speed: float = 0.95  # Slightly slower for authority
+    model: str = "tts-1-hd"  # HD quality
+
+class TTSResponse(BaseModel):
+    """Response from text-to-speech"""
+    audio_url: Optional[str] = None
+    audio_data: Optional[bytes] = None
+    duration_ms: float = 0.0
 
 # Health check
 @app.get("/health")
@@ -211,6 +230,42 @@ async def run_openrouter_inference(request: InferenceRequest) -> dict:
         tokens = data.get("usage", {}).get("total_tokens", 0)
         
         return {"content": content, "tokens": tokens}
+
+# Text-to-speech endpoint
+@app.post("/tts")
+async def text_to_speech(request: TTSRequest):
+    """
+    Generate speech from text using OpenAI TTS
+    Returns audio file with onyx voice (deep male) at specified speed
+    """
+    if not openai_client:
+        raise HTTPException(status_code=500, detail="OpenAI API key not configured")
+    
+    try:
+        import time
+        start_time = time.time()
+        
+        # Call OpenAI TTS API
+        response = openai_client.audio.speech.create(
+            model=request.model,  # tts-1-hd for HD quality
+            voice=request.voice,  # onyx = deep male voice
+            input=request.text,
+            speed=request.speed,  # 0.95 = slightly slower for authority
+        )
+        
+        duration_ms = (time.time() - start_time) * 1000
+        
+        # Return audio as bytes
+        audio_data = response.content
+        
+        return StreamingResponse(
+            iter([audio_data]),
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "attachment; filename=jarvis-speech.mp3"}
+        )
+    except Exception as e:
+        print(f"[TTS] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
 
 # Trace recording endpoint
 @app.post("/traces")

@@ -3,7 +3,7 @@ import { useAuth } from '@/_core/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
 import { JarvisLayout, JarvisHeader, Panel, Controls } from '@/components/JarvisLayout';
 import { Loader2 } from 'lucide-react';
-import { speakWithProsody, stopSpeech, isSpeaking, initializeVoiceSynthesis, type VoiceConfig } from '@/lib/advancedVoice';
+import { speakText, stopAudio, isAudioPlaying } from '@/lib/openaiTTS';
 
 interface Message {
   id: string;
@@ -38,15 +38,6 @@ export default function VoiceAssistant() {
   const [dataStream, setDataStream] = useState<string[]>([]);
 
   const recognitionRef = useRef<any>(null);
-  const voiceConfigRef = useRef<VoiceConfig>({
-    pitch: 0.75,
-    rate: 0.88,
-    volume: 1,
-    voiceProfile: 'jarvis',
-    enableEmphasis: true,
-    enablePauses: true,
-    enableStreaming: true,
-  });
 
   // tRPC mutations and queries
   const processMessageMutation = trpc.voice.processMessage.useMutation();
@@ -56,16 +47,9 @@ export default function VoiceAssistant() {
   const getModelsQuery = trpc.models.listAvailable.useQuery(undefined, { enabled: isAuthenticated });
   const getTracesQuery = trpc.performance.getTraces.useQuery({ limit: 50 }, { enabled: isAuthenticated });
 
-  // Initialize Web Speech API and Voice Synthesis
+  // Initialize Speech Recognition
   useEffect(() => {
-    // Initialize advanced voice synthesis with proper event listener
-    initializeVoiceSynthesis().then((voices) => {
-      console.log('[JARVIS] Voice system initialized with', voices.length, 'voices');
-      addDiagnostic('VOICE ENGINE READY');
-    }).catch((err) => {
-      console.error('[JARVIS] Voice initialization failed:', err);
-      addDiagnostic('VOICE ENGINE ERROR');
-    });
+    addDiagnostic('VOICE ENGINE READY (OpenAI TTS)');
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
@@ -132,21 +116,12 @@ export default function VoiceAssistant() {
     addDiagnostic('VOICE SYNTHESIS INITIATED...');
 
     try {
-      // Update voice config from preferences, maintaining JARVIS profile
-      const prefs = getPreferencesQuery.data;
-      if (prefs) {
-        voiceConfigRef.current.pitch = Math.min(0.75, (prefs.voicePitch || 75) / 100);
-        voiceConfigRef.current.rate = Math.min(0.88, (prefs.voiceRate || 88) / 100);
-      } else {
-        voiceConfigRef.current.pitch = 0.75;
-        voiceConfigRef.current.rate = 0.88;
-      }
-
-      // Use advanced voice synthesis with prosody
-      await speakWithProsody(text, voiceConfigRef.current, (progress) => {
-        if (progress % 25 === 0) {
-          addDiagnostic(`SYNTHESIS: ${progress}%`);
-        }
+      // Use OpenAI TTS via FastAPI backend with onyx voice (deep male)
+      await speakText({
+        text,
+        voice: 'onyx',      // Deep male voice
+        speed: 0.95,        // Slightly slower for authority
+        model: 'tts-1-hd',  // HD quality
       });
 
       addDiagnostic('VOICE SYNTHESIS COMPLETE.');
@@ -194,7 +169,7 @@ export default function VoiceAssistant() {
       }
 
       addDiagnostic('PREPARING VOICE OUTPUT...');
-      // Speak response with advanced prosody
+      // Speak response with OpenAI TTS
       await speak(result.response);
     } catch (error) {
       addDiagnostic('ERROR: NEURAL_LINK_FAILURE');
@@ -211,8 +186,8 @@ export default function VoiceAssistant() {
   };
 
   const handleMicClick = () => {
-    if (isSpeaking()) {
-      stopSpeech();
+    if (isAudioPlaying()) {
+      stopAudio();
       setIsSpeakingState(false);
     } else if (isListening) {
       recognitionRef.current?.stop();
