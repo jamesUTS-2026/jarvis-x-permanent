@@ -102,46 +102,64 @@ export function getVoiceProfile(profile: 'authoritative' | 'friendly' | 'technic
 }
 
 /**
- * Find best available voice for speech synthesis
+ * Find best available voice for speech synthesis - MALE VOICES ONLY
  */
 export function findBestVoice(profile?: string): SpeechSynthesisVoice | null {
   const voices = window.speechSynthesis.getVoices();
   
+  // Filter to ONLY male voices - exclude female voices completely
+  const maleVoices = voices.filter(v => {
+    const name = v.name.toLowerCase();
+    const lang = v.lang.toLowerCase();
+    
+    // Exclude known female voices
+    const femaleIndicators = ['female', 'woman', 'girl', 'victoria', 'samantha', 'karen', 'moira', 'fiona', 'zira', 'susan', 'jennifer'];
+    if (femaleIndicators.some(indicator => name.includes(indicator))) {
+      return false;
+    }
+    
+    // Include only male voices
+    const maleIndicators = ['male', 'man', 'boy', 'david', 'mark', 'george', 'google uk english male', 'microsoft david'];
+    return maleIndicators.some(indicator => name.includes(indicator)) || lang.includes('male');
+  });
+  
   // For JARVIS profile, prioritize British and deep male voices
-  if (profile === 'jarvis') {
+  if (profile === 'jarvis' && maleVoices.length > 0) {
     const jarvisPriorities = [
       (v: SpeechSynthesisVoice) => v.name.includes('Google UK English Male'),
       (v: SpeechSynthesisVoice) => v.name.includes('Microsoft David'),
       (v: SpeechSynthesisVoice) => v.name.includes('David') && v.lang.includes('en'),
-      (v: SpeechSynthesisVoice) => v.lang === 'en-GB' && v.name.includes('Male'),
-      (v: SpeechSynthesisVoice) => v.lang === 'en-GB',
+      (v: SpeechSynthesisVoice) => v.lang === 'en-GB' && !v.name.toLowerCase().includes('female'),
       (v: SpeechSynthesisVoice) => v.lang === 'en-US' && v.name.includes('Male'),
-      (v: SpeechSynthesisVoice) => v.lang.startsWith('en-'),
+      (v: SpeechSynthesisVoice) => v.lang === 'en-IN' && v.name.includes('Male'),
+      (v: SpeechSynthesisVoice) => v.lang.startsWith('en-') && !v.name.toLowerCase().includes('female'),
     ];
     
     for (const predicate of jarvisPriorities) {
-      const voice = voices.find(predicate);
+      const voice = maleVoices.find(predicate);
       if (voice) return voice;
     }
   }
   
-  // Default priority order
+  // Default priority order - MALE VOICES ONLY
   const priorities = [
+    (v: SpeechSynthesisVoice) => v.name.includes('Google UK English Male'),
     (v: SpeechSynthesisVoice) => v.name.includes('Google US English Male'),
     (v: SpeechSynthesisVoice) => v.name.includes('Microsoft David'),
     (v: SpeechSynthesisVoice) => v.name.includes('David') && v.lang.includes('en'),
     (v: SpeechSynthesisVoice) => v.lang === 'en-US' && v.name.includes('Male'),
     (v: SpeechSynthesisVoice) => v.lang === 'en-IN' && v.name.includes('Male'),
-    (v: SpeechSynthesisVoice) => v.lang.startsWith('en-US'),
-    (v: SpeechSynthesisVoice) => v.lang.startsWith('en'),
+    (v: SpeechSynthesisVoice) => v.lang === 'en-GB' && !v.name.toLowerCase().includes('female'),
+    (v: SpeechSynthesisVoice) => v.lang.startsWith('en-') && !v.name.toLowerCase().includes('female'),
   ];
 
   for (const predicate of priorities) {
-    const voice = voices.find(predicate);
+    const voice = maleVoices.find(predicate);
     if (voice) return voice;
   }
 
-  return voices[0] || null;
+  // Fallback to any male voice if available
+  return maleVoices[0] || voices[0] || null;
 }
 
 /**
