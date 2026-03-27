@@ -6,6 +6,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { getUserMemory, addMemoryFact, getChatHistory, addChatMessage, getUserPreferences, upsertUserPreferences, getAvailableModels, getModelById, addInteractionTrace, getUserTraces, getModelStats, addPerformanceMetric, getUserModelPreferences, upsertUserModelPreferences } from "./db";
 import { invokeLLM } from "./_core/llm";
+import { generateSpeechDataUrl } from "./_core/tts";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -19,6 +20,29 @@ export const appRouter = router({
         success: true,
       } as const;
     }),
+  }),
+
+  // Text-to-Speech using Manus Forge API
+  tts: router({
+    generate: protectedProcedure
+      .input(z.object({
+        text: z.string().min(1),
+        voice: z.enum(['onyx', 'echo', 'alloy', 'fable', 'nova', 'shimmer']).default('onyx'),
+      }))
+      .mutation(async ({ input }) => {
+        try {
+          const dataUrl = await generateSpeechDataUrl({
+            text: input.text,
+            voice: input.voice,
+          });
+          return { success: true, dataUrl };
+        } catch (error) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `TTS generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          });
+        }
+      }),
   }),
 
   // Voice and AI features
