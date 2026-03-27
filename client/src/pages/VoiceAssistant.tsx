@@ -28,6 +28,7 @@ export default function VoiceAssistant() {
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeakingState, setIsSpeakingState] = useState(false);
+  const [isContinuousMode, setIsContinuousMode] = useState(false);
   const [diagnostics, setDiagnostics] = useState<string[]>([
     '> BOOTING KERNEL...',
     '> LOADING MEMORY MODULE...',
@@ -81,6 +82,9 @@ export default function VoiceAssistant() {
       recognitionRef.current.onend = () => {
         setIsListening(false);
       };
+
+      // Store reference to recognitionRef for continuous mode
+      (recognitionRef.current as any).isContinuousMode = false;
 
       recognitionRef.current.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
@@ -194,8 +198,14 @@ export default function VoiceAssistant() {
       }
 
       addDiagnostic('PREPARING VOICE OUTPUT...');
-      // Speak response with advanced prosody
       await speak(result.response);
+
+      if (isContinuousMode && recognitionRef.current) {
+        setTimeout(() => {
+          recognitionRef.current?.start();
+          addDiagnostic('LISTENING...');
+        }, 500);
+      }
     } catch (error) {
       addDiagnostic('ERROR: NEURAL_LINK_FAILURE');
       const errorMsg: Message = {
@@ -205,6 +215,13 @@ export default function VoiceAssistant() {
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMsg]);
+
+      if (isContinuousMode && recognitionRef.current) {
+        setTimeout(() => {
+          recognitionRef.current?.start();
+          addDiagnostic('LISTENING...');
+        }, 500);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -218,6 +235,19 @@ export default function VoiceAssistant() {
       recognitionRef.current?.stop();
     } else {
       recognitionRef.current?.start();
+    }
+  };
+
+  const handleContinuousMode = () => {
+    const newMode = !isContinuousMode;
+    setIsContinuousMode(newMode);
+    
+    if (newMode) {
+      addDiagnostic('CONTINUOUS MODE ACTIVATED');
+      recognitionRef.current?.start();
+    } else {
+      addDiagnostic('CONTINUOUS MODE DEACTIVATED');
+      recognitionRef.current?.stop();
     }
   };
 
@@ -339,8 +369,10 @@ export default function VoiceAssistant() {
       <Controls
         onSend={handleSend}
         onMicClick={handleMicClick}
+        onContinuousMode={handleContinuousMode}
         isListening={isListening}
         isLoading={isLoading}
+        isContinuousMode={isContinuousMode}
       />
     </JarvisLayout>
   );
