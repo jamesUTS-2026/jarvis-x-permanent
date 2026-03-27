@@ -7,7 +7,7 @@ export interface VoiceConfig {
   pitch: number; // 0.5 - 2.0
   rate: number; // 0.5 - 2.0
   volume: number; // 0 - 1
-  voiceProfile: 'authoritative' | 'friendly' | 'technical';
+  voiceProfile: 'authoritative' | 'friendly' | 'technical' | 'jarvis';
   enableEmphasis: boolean;
   enablePauses: boolean;
   enableStreaming: boolean;
@@ -74,7 +74,7 @@ export function parseTextForSpeech(text: string): SpeechSegment[] {
 /**
  * Get voice profile configuration
  */
-export function getVoiceProfile(profile: 'authoritative' | 'friendly' | 'technical'): Partial<VoiceConfig> {
+export function getVoiceProfile(profile: 'authoritative' | 'friendly' | 'technical' | 'jarvis'): Partial<VoiceConfig> {
   const profiles = {
     authoritative: {
       pitch: 0.85,
@@ -91,6 +91,11 @@ export function getVoiceProfile(profile: 'authoritative' | 'friendly' | 'technic
       rate: 0.92,
       volume: 1,
     },
+    jarvis: {
+      pitch: 0.75, // Deep masculine voice
+      rate: 0.88,  // Slower, more refined delivery
+      volume: 1,
+    },
   };
 
   return profiles[profile];
@@ -99,10 +104,28 @@ export function getVoiceProfile(profile: 'authoritative' | 'friendly' | 'technic
 /**
  * Find best available voice for speech synthesis
  */
-export function findBestVoice(): SpeechSynthesisVoice | null {
+export function findBestVoice(profile?: string): SpeechSynthesisVoice | null {
   const voices = window.speechSynthesis.getVoices();
   
-  // Priority order: Google US English, Microsoft David, en-US, en-IN
+  // For JARVIS profile, prioritize British and deep male voices
+  if (profile === 'jarvis') {
+    const jarvisPriorities = [
+      (v: SpeechSynthesisVoice) => v.name.includes('Google UK English Male'),
+      (v: SpeechSynthesisVoice) => v.name.includes('Microsoft David'),
+      (v: SpeechSynthesisVoice) => v.name.includes('David') && v.lang.includes('en'),
+      (v: SpeechSynthesisVoice) => v.lang === 'en-GB' && v.name.includes('Male'),
+      (v: SpeechSynthesisVoice) => v.lang === 'en-GB',
+      (v: SpeechSynthesisVoice) => v.lang === 'en-US' && v.name.includes('Male'),
+      (v: SpeechSynthesisVoice) => v.lang.startsWith('en-'),
+    ];
+    
+    for (const predicate of jarvisPriorities) {
+      const voice = voices.find(predicate);
+      if (voice) return voice;
+    }
+  }
+  
+  // Default priority order
   const priorities = [
     (v: SpeechSynthesisVoice) => v.name.includes('Google US English Male'),
     (v: SpeechSynthesisVoice) => v.name.includes('Microsoft David'),
@@ -131,7 +154,7 @@ export async function speakWithProsody(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const segments = parseTextForSpeech(text);
-    const voice = findBestVoice();
+    const voice = findBestVoice(config.voiceProfile);
 
     if (!voice) {
       reject(new Error('No voice available'));
@@ -155,9 +178,10 @@ export async function speakWithProsody(
       utterance.rate = config.rate;
       utterance.volume = config.volume;
 
-      // Adjust pitch for emphasis
+      // Adjust pitch for emphasis (less dramatic for JARVIS)
       if (segment.emphasis && config.enableEmphasis) {
-        utterance.pitch = Math.min(2, config.pitch + 0.15);
+        const emphasisBoost = config.voiceProfile === 'jarvis' ? 0.08 : 0.15;
+        utterance.pitch = Math.min(2, config.pitch + emphasisBoost);
       }
 
       utterance.onend = () => {

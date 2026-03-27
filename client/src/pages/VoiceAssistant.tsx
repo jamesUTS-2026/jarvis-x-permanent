@@ -39,10 +39,10 @@ export default function VoiceAssistant() {
 
   const recognitionRef = useRef<any>(null);
   const voiceConfigRef = useRef<VoiceConfig>({
-    pitch: 0.9,
-    rate: 1.0,
+    pitch: 0.75,
+    rate: 0.88,
     volume: 1,
-    voiceProfile: 'authoritative',
+    voiceProfile: 'jarvis',
     enableEmphasis: true,
     enablePauses: true,
     enableStreaming: true,
@@ -124,11 +124,14 @@ export default function VoiceAssistant() {
     addDiagnostic('VOICE SYNTHESIS INITIATED...');
 
     try {
-      // Update voice config from preferences
+      // Update voice config from preferences, maintaining JARVIS profile
       const prefs = getPreferencesQuery.data;
       if (prefs) {
-        voiceConfigRef.current.pitch = (prefs.voicePitch || 90) / 100;
-        voiceConfigRef.current.rate = (prefs.voiceRate || 100) / 100;
+        voiceConfigRef.current.pitch = Math.min(0.75, (prefs.voicePitch || 75) / 100);
+        voiceConfigRef.current.rate = Math.min(0.88, (prefs.voiceRate || 88) / 100);
+      } else {
+        voiceConfigRef.current.pitch = 0.75;
+        voiceConfigRef.current.rate = 0.88;
       }
 
       // Use advanced voice synthesis with prosody
