@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 JARVIS X - Real-time Voice AI Agent
-Using LiveKit agents with correct API
+Using LiveKit agents framework
 """
 
 import os
@@ -9,7 +9,7 @@ import logging
 from dotenv import load_dotenv
 
 from livekit import agents
-from livekit.agents import JobContext, WorkerOptions, llm
+from livekit.agents import JobContext, llm
 from livekit.plugins import silero, openai
 
 # Load environment variables
@@ -30,38 +30,30 @@ async def entrypoint(ctx: JobContext):
     logger.info("Starting JARVIS X Agent...")
     logger.info(f"Room: {ctx.room.name}, Participant: {ctx.participant.name}")
 
-    # Create initial chat context with system prompt
+    # Create initial chat context
     initial_ctx = llm.ChatContext()
     initial_ctx.messages.append(
         llm.ChatMessage(
             role="system",
-            content="""You are JARVIS X, an advanced AI assistant inspired by Iron Man's JARVIS.
-You are intelligent, sophisticated, and always ready to help.
+            content="""You are JARVIS X, an advanced AI assistant.
 Respond naturally and conversationally.
-Keep responses concise but informative.
-Always be respectful and professional.""",
+Keep responses concise but informative.""",
         )
     )
 
-    # Create voice assistant with correct API
-    await agents.VoiceAssistant(
+    # Create and start voice assistant
+    assistant = agents.VoiceAssistant(
         stt=silero.STT.create(),
-        tts=openai.TTS.create(
-            model="tts-1-hd",
-            voice="onyx",
-        ),
+        tts=openai.TTS.create(model="tts-1-hd", voice="onyx"),
         chat_ctx=initial_ctx,
-    ).astart(ctx.room, ctx.participant)
+    )
+
+    await assistant.astart(ctx.room, ctx.participant)
 
 
 if __name__ == "__main__":
-    # Run the agent with correct API
-    worker_options = WorkerOptions(
-        entrypoint=entrypoint,
-    )
-
     agents.run_app(
-        [worker_options],
+        entrypoint,
         livekit_url=LIVEKIT_URL,
         livekit_api_key=LIVEKIT_API_KEY,
         livekit_api_secret=LIVEKIT_API_SECRET,
